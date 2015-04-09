@@ -1,2 +1,2 @@
-# realm
-A medieval sim
+# Realm
+A medieval sim.
