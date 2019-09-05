@@ -1,12 +1,9 @@
 # Realm
-A tribal sim.
+A modern faction sim.
 
 # Tasks
 P1
 * Make a playable subset.
-
-P2
-* Port app to iOS.
 
 P3
 * Change default app icon.
@@ -14,7 +11,6 @@ P3
 
 # Credits
 Alexei Fedotov http://www.dataved.ru/
-Paradox http://www.paradoxplaza.com/
 A Game of Thrones for Crusader Kings II http://citadel.prophpbb.com/
 
 
