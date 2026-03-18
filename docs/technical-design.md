@@ -9,7 +9,7 @@
 
 ## 1. Overview
 
-*Conspiracy* is a darkly humorous civilization simulation sandbox. Players influence (not rule) a multi-layered dominion through bureaucracy, hero management, and ideological manipulation. The game draws inspiration from Crusader Kings II, Dwarf Fortress, Victoria, RimWorld, and Tyranny.
+*Conspiracy* is a darkly humorous civilization simulation sandbox. Players influence (not rule) a multi-layered dominion through bureaucracy, hero management, and ideological manipulation. The game draws inspiration from Crusader Kings II, Dwarf Fortress, Victoria, RimWorld, Tyranny, and Hearts of Iron IV.
 
 **Core fantasy:** "Accumulate power. Scale the agents and long-term projects that sustain it. Prevent it from collapsing under its own weight. Outperform and outplay your rivals."
 
@@ -73,6 +73,27 @@ The game is divided into two independent components with a clean boundary:
 - Each entry is expandable: shows cause → effect chain, affected entities, and world state delta
 - Events sourced from the Python-generated turn summary committed by CI; no extra server calls needed
 - Doubles as a post-turn debrief screen and a long-form chronicle browser (`git log` surfaced as readable history)
+
+**Statistics module (client-side):**
+- Dedicated panel displaying graphs of key world metrics over time, sourced from committed world state JSON history
+- All data read locally from the player's fork — no server queries needed
+- Charts rendered in Godot using a lightweight charting library (e.g. `godot-graph` or custom CanvasItem drawing)
+
+Tracked metrics (per turn, plotted over time):
+
+| Metric | Description |
+|---|---|
+| Trust | Dominion-wide trust level; primary currency curve |
+| Belief index | Aggregate population belief; drives resource availability |
+| Army strength | Total military strength across all armies |
+| Faction influence | Per-faction influence share over time (stacked area chart) |
+| Hero count | Active heroes by type (agent, general, demigod) |
+| Economy output | Production vs. consumption per turn |
+| Sanity index | Dominion stability composite score |
+
+- Player can overlay their own stats against rivals' public metrics (read from shared fork data)
+- Graphs are filterable by time range, entity, and layer (surface / underworld / digital)
+- Sharp drops and spikes are annotated with the event that caused them (linked to Event Viewer entries)
 
 ### 2.1. GitHub as World Storage
 
@@ -274,6 +295,51 @@ All commands are filtered through bureaucracy and belief before execution — pl
 Example entries:
 - *Sanctioned Teleportation*: 12 paperwork points + 1 victim
 - *Civic Necromancy*: unlocks dead labor force; high PR risk
+
+### 4.8. Military System
+
+Inspired by Hearts of Iron IV — military power is a managed resource of doctrine, logistics, and personnel, not raw unit counts. Players do not command individual soldiers; they design military organizations, assign commanders, and issue strategic orders. Execution is handled autonomously by the simulation.
+
+**Core concepts:**
+
+- **Armies are organizations**, not stacks. Each army has a doctrine, a supply chain, a commander personality, and a morale state.
+- **Generals are heroes.** Military commanders are full hero agents (Skill Graph + Personality Matrix). A brilliant general with paranoia will rout when flanked; a mediocre one with high loyalty will hold the line past reason.
+- **Orders are strategic, not tactical.** Players issue directives (advance, hold, encircle, raid supply lines) — not move commands. The simulation resolves how the army interprets and executes them based on commander traits and doctrine.
+
+**Military order flow (per turn):**
+
+```
+Player writes military orders → orders/turn_N_orders.json
+  e.g. { "army": "3rd Legion", "directive": "encircle", "target_region": "Valdenmoor" }
+
+CI resolves:
+  1. Check supply state of army
+  2. Evaluate commander's interpretation (modified by personality traits)
+  3. Resolve engagement against defender (doctrine vs. doctrine, morale vs. morale)
+  4. Apply casualties, territory changes, morale shifts
+  5. Generate narrative event entry (e.g. "The 3rd Legion encircled Valdenmoor. General Hoss misread the orders and took the scenic route.")
+```
+
+**Key stats per army:**
+
+| Stat | Description |
+|---|---|
+| Strength | Headcount and equipment level |
+| Morale | Will to fight; collapses faster than strength |
+| Supply | Logistics chain; armies cut off from supply decay rapidly |
+| Doctrine | Combat style (attrition, maneuver, siege, raid) |
+| Commander loyalty | How faithfully orders are executed |
+| Commander competence | Quality of autonomous tactical decisions |
+
+**HoI4 influences:**
+- Supply lines as a strategic resource — cutting them is often more powerful than direct combat
+- Doctrine selection shapes how the army behaves under autonomous resolution
+- Front lines and encirclement as strategic concepts, not tile-by-tile movement
+- Attrition and overextension as natural brakes on conquest
+
+**Belief interaction:**
+- Army morale is partially driven by the belief economy — soldiers fight harder for a cause populations believe in
+- A faction that loses public faith sees military morale decay even without battlefield losses
 
 ---
 
