@@ -1,6 +1,6 @@
 """
 Order schemas and validator.
-A turn's orders file lives at /{userid}/orders/turn_N_orders.json.
+A turn's orders file lives at /{userid}/orders/turn.json.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ class ValidationError(Exception):
 
 
 def load_orders(userid: str, turn: int) -> TurnOrders:
-    f = world_dir(userid) / "orders" / f"turn_{turn:04d}_orders.json"
+    f = world_dir(userid) / "orders" / "turn.json"
     if not f.exists():
         return TurnOrders(userid=userid, turn=turn, orders=[])
     raw = json.loads(f.read_text())

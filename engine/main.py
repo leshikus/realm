@@ -3,7 +3,7 @@ CLI entry point for the simulation engine.
 Called by CI:
     python -m engine.main <userid> <turn>
 
-Reads:  world/<userid>/**/*.json  +  world/<userid>/orders/turn_NNNN_orders.json
+Reads:  world/<userid>/**/*.json  +  world/<userid>/orders/turn.json
 Writes: world/<userid>/**/*.json  +  world/<userid>/history/events.log
 Exits:  0 on success, 1 on validation failure (CI will reject the PR).
 """
