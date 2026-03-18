@@ -19,65 +19,67 @@
 
 | Concern | Recommendation |
 |---|---|
-| Renderer | Godot 4 — map display, 3D hero models, UI |
+| Client | Plain HTML + Canvas + Chart.js — deployed to GitHub Pages |
 | Simulation engine | Python — turn processor, faction AI, event engine, CI pipeline |
-| Client/server protocol | JSON over REST or local socket (Godot ↔ Python) |
+| Client/server protocol | GitHub REST API (fetch world state JSON; submit orders as PR) |
 | World storage | GitHub — each player world is a fork of the canonical repo |
 | Turn processing | Python CI job triggered by PR; commits resolved world state |
+| Client deployment | GitHub Actions → GitHub Pages on every push to `master` |
 | Divergence handling | Git diff/merge as native world-state conflict resolution |
 | Localization | JSON-based, modular, per-language myth generation |
 
-### 2.0. Architecture Split: Python + Godot 4
+### 2.0. Architecture Split: Python + Browser Client
 
 The game is divided into two independent components with a clean boundary:
 
 ```
-┌─────────────────────────────┐        ┌──────────────────────────────┐
-│        Godot 4 (client)     │        │     Python (simulation)      │
-│                             │        │                              │
-│  - Map rendering            │  JSON  │  - Turn processor (CI)       │
-│  - 3D hero models           │◄──────►│  - Faction AI                │
-│  - UI panels                │        │  - Event engine              │
-│  - Player order input       │        │  - Belief/Trust economy      │
-│  - World state visualizer   │        │  - Order validator           │
-│  - Event viewer             │        │                              │
-└─────────────────────────────┘        └──────────────────────────────┘
-        reads world state                    writes world state
-        from fork (git pull)                 to fork (git commit via CI)
+┌──────────────────────────────────┐        ┌──────────────────────────────┐
+│   Browser client (GitHub Pages)  │        │     Python (simulation)      │
+│                                  │        │                              │
+│  - Map (Canvas)                  │ GitHub │  - Turn processor (CI)       │
+│  - Order input + PR submission   │  API   │  - Faction AI                │
+│  - Event viewer                  │◄──────►│  - Event engine              │
+│  - Statistics (Chart.js)         │        │  - Belief/Trust economy      │
+│                                  │        │  - Order validator           │
+└──────────────────────────────────┘        └──────────────────────────────┘
+        reads world state JSON                   writes world state JSON
+        via GitHub raw content API               to fork (git commit via CI)
 ```
 
-**Python owns all game logic.** Godot is a viewer and input collector — it has no simulation state of its own.
+**Python owns all game logic.** The browser client is a viewer and input collector — it has no simulation state of its own.
 
 **Data flow per turn:**
-1. Player issues orders via Godot UI
-2. Godot writes `orders/turn_N_orders.json` and opens a PR (via GitHub API)
-3. CI triggers Python simulation engine
-4. Python resolves the turn, commits updated world state JSON to the PR branch
-5. PR auto-merges; Godot pulls the new world state and re-renders
+1. Player opens the client at `https://{userid}.github.io/realm`
+2. Client fetches world state JSON from the player's fork via GitHub raw content API
+3. Player composes orders in the Orders panel; client opens a PR via GitHub API
+4. CI triggers Python simulation engine on the PR
+5. Python resolves the turn, commits updated world state JSON; PR auto-merges
+6. Player reloads client — fetches new world state and re-renders
 
 **Python stack:**
 - Standard library + `pydantic` for world state schemas
 - `pytest` for simulation engine unit tests (determinism is testable)
-- GitHub API via `PyGitHub` or `httpx` for PR automation
 - No game framework needed — pure data transformation
 
-**Godot stack:**
-- GDScript for UI and rendering logic
-- Reads world state from local git-pulled JSON files
-- `HTTPRequest` node or local socket for any live Python queries (e.g., turn preview)
+**Browser client stack:**
+- Vanilla HTML/CSS/JS — no build step, no bundler
+- Canvas API for map rendering (region cards, armies, heroes)
+- Chart.js (CDN) for Statistics panel graphs
+- Native `fetch()` for GitHub REST API calls
+- `localStorage` for config (token, userid, repo)
+- Deployed to GitHub Pages via `deploy-pages.yml` workflow on every push to `master`
 
 **Event Viewer module (client-side):**
-- Dedicated panel in the Godot client that replays the event log from `history/events.log` after each turn resolves
-- Displays events as a chronological feed — narrative tone, in-world language (not raw JSON)
-- Supports filtering by faction, hero, region, or event type
-- Each entry is expandable: shows cause → effect chain, affected entities, and world state delta
-- Events sourced from the Python-generated turn summary committed by CI; no extra server calls needed
-- Doubles as a post-turn debrief screen and a long-form chronicle browser (`git log` surfaced as readable history)
+- Dedicated panel that fetches and renders `history/events.log` after each turn resolves
+- Displays events as a chronological feed — narrative tone, in-world language
+- Supports keyword filtering (faction, hero, region)
+- Turn headers and world events colour-coded for readability
+- Doubles as a post-turn debrief screen and long-form chronicle browser
 
 **Statistics module (client-side):**
-- Dedicated panel displaying graphs of key world metrics over time, sourced from committed world state JSON history
-- All data read locally from the player's fork — no server queries needed
-- Charts rendered in Godot using a lightweight charting library (e.g. `godot-graph` or custom CanvasItem drawing)
+- Chart.js line graphs of key world metrics over time
+- Data sourced from per-turn `history/stats_{turn}.json` snapshots written by Python engine
+- Fetched from GitHub raw content API — no extra backend needed
 
 Tracked metrics (per turn, plotted over time):
 
@@ -86,14 +88,10 @@ Tracked metrics (per turn, plotted over time):
 | Trust | Dominion-wide trust level; primary currency curve |
 | Belief index | Aggregate population belief; drives resource availability |
 | Army strength | Total military strength across all armies |
-| Faction influence | Per-faction influence share over time (stacked area chart) |
-| Hero count | Active heroes by type (agent, general, demigod) |
-| Economy output | Production vs. consumption per turn |
-| Sanity index | Dominion stability composite score |
+| Avg unrest | Average unrest across all regions |
 
-- Player can overlay their own stats against rivals' public metrics (read from shared fork data)
-- Graphs are filterable by time range, entity, and layer (surface / underworld / digital)
-- Sharp drops and spikes are annotated with the event that caused them (linked to Event Viewer entries)
+- Player can overlay their own stats against rivals' public metrics (read from their fork)
+- Sharp drops and spikes visually apparent from the line shape
 
 ### 2.1. GitHub as World Storage
 
@@ -420,9 +418,9 @@ Each variant repaints the same systems with a new aesthetic:
 
 - Python simulation engine performance at millions-of-citizens scale (consider PyPy or selective Cython for hot paths)
 - Micromodel for procedural dialogue: embedded LLM via API vs. weighted JSON template trees
-- Godot ↔ Python protocol: REST (simpler) vs. local socket (lower latency for turn preview)
-- Mobile build scope: Godot mobile export vs. separate web frontend
+- GitHub token exposure: client stores token in `localStorage` — acceptable for private beta, needs server-side proxy for public release
 - Turn deadline enforcement: time-gated CI cron trigger vs. player-initiated PR
+- CORS limitations for GitHub API from GitHub Pages (currently mitigated by using raw content URLs for reads)
 
 ---
 
