@@ -1,0 +1,13 @@
+[
+  {
+    "id": "army_1st",
+    "name": "1st Legion",
+    "owner": "leshikus",
+    "region_id": "reg_valdenmoor",
+    "commander_hero_id": "h001",
+    "doctrine": "attrition",
+    "strength": 100,
+    "morale": 80,
+    "economy_upkeep_per_turn": 5
+  }
+]

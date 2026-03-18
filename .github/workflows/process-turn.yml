@@ -1,0 +1,78 @@
+name: Process Turn
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'world/*/orders/**.json'
+
+jobs:
+  resolve-turn:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pydantic
+
+      - name: Detect userid and turn from changed files
+        id: detect
+        run: |
+          # Extract userid and turn from the changed orders file path
+          # Expected path: world/<userid>/orders/turn_NNNN_orders.json
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep 'orders/turn_.*_orders.json' | head -1)
+          if [ -z "$CHANGED" ]; then
+            echo "No orders file found in PR. Skipping."
+            exit 0
+          fi
+          USERID=$(echo "$CHANGED" | cut -d'/' -f2)
+          TURN=$(echo "$CHANGED" | grep -o 'turn_[0-9]*' | grep -o '[0-9]*' | sed 's/^0*//')
+          echo "userid=$USERID" >> $GITHUB_OUTPUT
+          echo "turn=$TURN"     >> $GITHUB_OUTPUT
+          echo "Detected userid=$USERID turn=$TURN"
+
+      - name: Run simulation engine
+        id: simulate
+        run: |
+          python -m engine.main "${{ steps.detect.outputs.userid }}" "${{ steps.detect.outputs.turn }}"
+
+      - name: Commit resolved world state
+        run: |
+          git config user.name  "realm-ci"
+          git config user.email "ci@realm.game"
+          git add world/
+          SUMMARY=$(python -m engine.main "${{ steps.detect.outputs.userid }}" "${{ steps.detect.outputs.turn }}" 2>/dev/null | head -1 || echo "Turn resolved.")
+          git commit -m "Turn ${{ steps.detect.outputs.turn }}: $SUMMARY" || echo "Nothing to commit."
+          git push
+
+      - name: Auto-merge PR on success
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge "${{ github.event.pull_request.number }}" --squash --auto
+
+      - name: Post failure report as PR comment
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --body "## Turn resolution failed
+
+          The simulation engine rejected your orders. See the [Actions log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
+
+          Fix the orders file and push again to retry."
