@@ -26,12 +26,12 @@ See [`docs/technical-design.md`](docs/technical-design.md) and [`docs/lore.md`](
 - [ ] Agent assignment to player orders (heroic layer)
 - [ ] Basic military resolution — army strength + commander traits + doctrine vs. opponent
 
-### Phase 4: Godot Client (Thin)
-- [ ] Map view — render regions and ownership from world state JSON
-- [ ] 3D hero models — display active heroes on map
-- [ ] Order input UI — player composes turn orders and submits PR via GitHub API
+### Phase 4: Browser Client (GitHub Pages)
+- [ ] Map view — Canvas-rendered region cards with armies and heroes
+- [ ] Order input UI — compose orders as JSON and submit PR via GitHub API
 - [ ] Event Viewer — chronological narrative feed from `history/events.log`
-- [ ] Statistics module — graphs of Trust, Belief, army strength, faction influence over time
+- [ ] Statistics module — Chart.js graphs of Trust, Belief, army strength, unrest over time
+- [ ] Deploy workflow — `deploy-pages.yml` publishes `client/` to GitHub Pages on push to `master`
 
 ### Phase 5: Multiplayer
 - [ ] Fork-based player onboarding — new player forks canonical repo

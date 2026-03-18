@@ -13,7 +13,7 @@ import sys
 import json
 from datetime import datetime, timezone
 
-from .loader import load_player_world, save_player_world, append_history
+from .loader import load_player_world, save_player_world, append_history, world_dir
 from .orders import load_orders, validate_orders
 from .simulation import resolve_turn
 
@@ -51,10 +51,34 @@ def main() -> None:
     for event in result.events:
         append_history(userid, f"  {event}")
 
+    # Write stats snapshot for the client's Statistics panel
+    _write_stats_snapshot(userid, turn, result.world)
+
     # Print turn summary (becomes the git commit message body in CI)
     print(f"Turn {turn} resolved. {len(result.events)} events.")
     for event in result.events:
         print(f"  {event}")
+
+
+def _write_stats_snapshot(userid: str, turn: int, world) -> None:
+    """Write a per-turn stats JSON file read by the browser Statistics panel."""
+    avg_unrest = (
+        sum(r.unrest for r in world.regions) // max(1, len(world.regions))
+        if world.regions else 0
+    )
+    total_strength = sum(a.strength for a in world.armies)
+    snapshot = {
+        "turn":          turn,
+        "trust":         world.economy.trust,
+        "belief":        world.belief.aggregate,
+        "army_strength": total_strength,
+        "unrest":        avg_unrest,
+    }
+    stats_dir = world_dir(userid) / "history"
+    stats_dir.mkdir(parents=True, exist_ok=True)
+    (stats_dir / f"stats_{turn:04d}.json").write_text(
+        json.dumps(snapshot, indent=2)
+    )
 
 
 if __name__ == "__main__":
