@@ -8,7 +8,7 @@
     },
     {
       "type": "set_propaganda",
-      "params": {"faction_id": "fac_bureau", "value": 5}
+      "params": {"faction_id": "fac_bureau", "value": 6}
     }
   ]
 }

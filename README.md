@@ -31,7 +31,7 @@ See [`docs/technical-design.md`](docs/technical-design.md) and [`docs/lore.md`](
 - [ ] Order input UI — compose orders as JSON and submit PR via GitHub API
 - [ ] Event Viewer — chronological narrative feed from `history/events.log`
 - [ ] Statistics module — Chart.js graphs of Trust, Belief, army strength, unrest over time
-- [ ] Deploy workflow — `deploy-pages.yml` publishes `client/` to GitHub Pages on push to `master`
+- [ ] Deploy workflow — `deploy-pages.yml` publishes `client/` to GitHub Pages on push to `main`
 
 ### Phase 5: Multiplayer
 - [ ] Fork-based player onboarding — new player forks canonical repo

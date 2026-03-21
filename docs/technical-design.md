@@ -24,7 +24,7 @@
 | Client/server protocol | GitHub REST API (fetch world state JSON; submit orders as PR) |
 | World storage | GitHub — each player world is a fork of the canonical repo |
 | Turn processing | Python CI job triggered by PR; commits resolved world state |
-| Client deployment | GitHub Actions → GitHub Pages on every push to `master` |
+| Client deployment | GitHub Actions → GitHub Pages on every push to `main` |
 | Divergence handling | Git diff/merge as native world-state conflict resolution |
 | Localization | JSON-based, modular, per-language myth generation |
 
@@ -67,7 +67,7 @@ The game is divided into two independent components with a clean boundary:
 - Chart.js (CDN) for Statistics panel graphs
 - Native `fetch()` for GitHub REST API calls
 - `localStorage` for config (token, userid, repo)
-- Deployed to GitHub Pages via `deploy-pages.yml` workflow on every push to `master`
+- Deployed to GitHub Pages via `deploy-pages.yml` workflow on every push to `main`
 
 **Event Viewer module (client-side):**
 - Dedicated panel that fetches and renders `history/events.log` after each turn resolves
