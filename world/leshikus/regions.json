@@ -3,7 +3,9 @@
     "id": "reg_valdenmoor",
     "name": "Valdenmoor",
     "owner": "leshikus",
-    "adjacent_region_ids": ["reg_ashfen"],
+    "adjacent_region_ids": [
+      "reg_ashfen"
+    ],
     "population": 12000,
     "prosperity": 60,
     "unrest": 15,
@@ -13,7 +15,9 @@
     "id": "reg_ashfen",
     "name": "Ashfen",
     "owner": "leshikus",
-    "adjacent_region_ids": ["reg_valdenmoor"],
+    "adjacent_region_ids": [
+      "reg_valdenmoor"
+    ],
     "population": 4000,
     "prosperity": 35,
     "unrest": 30,
