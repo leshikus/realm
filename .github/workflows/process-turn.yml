@@ -2,9 +2,9 @@ name: Process Turn
 
 on:
   pull_request:
-    branches: [master]
+    branches: [main]
     paths:
-      - 'world/*/orders/**.json'
+      - 'world/*/orders/turn.json'
 
 jobs:
   resolve-turn:
