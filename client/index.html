@@ -13,9 +13,19 @@ DEBUG
   <div id="login-screen" class="hidden">
     <div class="setup-box">
       <h2>Conspiracy</h2>
+
+      <!-- Device Flow section -->
       <button id="btn-login" class="primary">Login with GitHub</button>
-      <p class="hint">Redirects to GitHub for authorisation, then returns here.</p>
+      <div id="device-flow-prompt" class="hidden">
+        <p class="hint">Open <a id="device-uri" href="#" target="_blank">github.com/login/device</a> and enter:</p>
+        <div id="device-code-display"></div>
+        <button id="btn-copy-code">Copy code</button>
+        <p id="device-status" class="hint"></p>
+      </div>
+
       <div class="login-divider">— or —</div>
+
+      <!-- PAT fallback -->
       <label>Personal Access Token
         <input id="pat-input" type="password" placeholder="ghp_…" autocomplete="off" />
       </label>
@@ -24,6 +34,7 @@ DEBUG
       </label>
       <button id="btn-pat">Connect with token</button>
       <p class="hint">Token needs <code>repo</code> scope. Generated at GitHub → Settings → Developer settings → Personal access tokens.</p>
+
       <p id="login-error" class="error hidden"></p>
     </div>
   </div>

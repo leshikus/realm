@@ -1,92 +1,59 @@
 /**
- * auth.js — GitHub OAuth PKCE login flow.
- * No CLIENT_SECRET required; works from any static page.
+ * auth.js — GitHub OAuth Device Flow.
+ * No CLIENT_SECRET, no redirect URI. Works from any static page.
  *
  * Usage:
- *   On page load:  const token = await handleCallback();
- *   On login btn:  await startLogin();
+ *   const { user_code, verification_uri, device_code, interval } = await startDeviceFlow();
+ *   // show user_code + verification_uri to the user
+ *   const token = await pollForToken(device_code, interval, onTick);
  */
 
 const CLIENT_ID = 'https://leshikus.github.io/conspiracy';
 const SCOPES    = 'repo';
 
-function redirectUri() {
-  // Strips trailing slash so GitHub's registered callback matches exactly.
-  return window.location.origin + window.location.pathname.replace(/\/$/, '');
-}
-
-function base64url(bytes) {
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-function randomVerifier() {
-  const b = new Uint8Array(32);
-  crypto.getRandomValues(b);
-  return base64url(b);
-}
-
-async function deriveChallenge(verifier) {
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-  return base64url(new Uint8Array(hash));
-}
-
 /**
- * Redirect the browser to GitHub's OAuth consent screen.
- * Stores the PKCE verifier and state in sessionStorage before leaving.
+ * Step 1: Request a device code from GitHub.
+ * Returns { device_code, user_code, verification_uri, interval, expires_in }.
  */
-export async function startLogin() {
-  const verifier = randomVerifier();
-  const state    = crypto.randomUUID();
-  sessionStorage.setItem('pkce_verifier', verifier);
-  sessionStorage.setItem('pkce_state',    state);
-
-  const q = new URLSearchParams({
-    client_id:             CLIENT_ID,
-    redirect_uri:          redirectUri(),
-    scope:                 SCOPES,
-    state,
-    code_challenge:        await deriveChallenge(verifier),
-    code_challenge_method: 'S256',
-  });
-  window.location.href = `https://github.com/login/oauth/authorize?${q}`;
-}
-
-/**
- * Call on every page load.
- * If the URL contains ?code=..., exchanges it for an access token, cleans the
- * URL, and returns the token string.  Returns null if no callback is present.
- * Throws on state mismatch or GitHub error.
- */
-export async function handleCallback() {
-  const p    = new URLSearchParams(window.location.search);
-  const code = p.get('code');
-  if (!code) return null;
-
-  const state = p.get('state');
-  if (state !== sessionStorage.getItem('pkce_state')) {
-    sessionStorage.removeItem('pkce_verifier');
-    sessionStorage.removeItem('pkce_state');
-    throw new Error('OAuth state mismatch — possible CSRF attack');
-  }
-
-  const verifier = sessionStorage.getItem('pkce_verifier');
-  sessionStorage.removeItem('pkce_verifier');
-  sessionStorage.removeItem('pkce_state');
-  history.replaceState(null, '', location.pathname);  // strip ?code= from URL
-
-  const res  = await fetch('https://github.com/login/oauth/access_token', {
+export async function startDeviceFlow() {
+  const res = await fetch('https://github.com/login/device/code', {
     method:  'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body:    JSON.stringify({
-      client_id:     CLIENT_ID,
-      code,
-      redirect_uri:  redirectUri(),
-      code_verifier: verifier,
-    }),
+    body:    JSON.stringify({ client_id: CLIENT_ID, scope: SCOPES }),
   });
-
+  if (!res.ok) throw new Error(`Device flow init failed: ${res.status}`);
   const data = await res.json();
   if (data.error) throw new Error(data.error_description ?? data.error);
-  return data.access_token;
+  return data;
+}
+
+/**
+ * Step 2: Poll until the user authorises (or until expired/denied).
+ * Returns the access token string.
+ * onTick is called with 'pending' | 'slow_down' on each unsuccessful poll.
+ */
+export async function pollForToken(device_code, interval_seconds, onTick) {
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  let wait = interval_seconds * 1000;
+
+  while (true) {
+    await delay(wait);
+    const res  = await fetch('https://github.com/login/oauth/access_token', {
+      method:  'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        client_id:  CLIENT_ID,
+        device_code,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      }),
+    });
+    const data = await res.json();
+
+    if (data.access_token)                      return data.access_token;
+    if (data.error === 'authorization_pending') { onTick?.('pending');   continue; }
+    if (data.error === 'slow_down')             { wait += 5000; onTick?.('slow_down'); continue; }
+    if (data.error === 'expired_token')         throw new Error('Code expired — try again.');
+    if (data.error === 'access_denied')         throw new Error('Access denied.');
+    throw new Error(data.error_description ?? data.error ?? 'Unknown OAuth error');
+  }
 }

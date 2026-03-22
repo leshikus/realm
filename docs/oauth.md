@@ -20,7 +20,7 @@ Player visits https://{userid}.github.io/conspiracy
     │
     ▼
 [1] Auth check — is a token in localStorage?
-    │   No → PKCE login → redirect to GitHub → callback → get token → store in localStorage
+    │   No → Device Flow → show user_code → user approves on GitHub → poll → store in localStorage
     │   Yes → use it (clear + re-auth on 401)
     │
     ▼
@@ -94,26 +94,26 @@ async function waitForFork(userid) {
 
 | Method | Works without backend? | UX | Notes |
 |---|---|---|---|
-| PAT (manual) | Yes | Poor | Fine for private beta; no user-friendly flow |
-| **OAuth Web Flow + PKCE** | **Yes** | **Good** | **Right answer for static sites** |
-| Device Flow | Yes | Acceptable | Requires user to manually copy a code |
+| PAT (manual) | Yes | Poor | Fine for private beta; kept as fallback |
+| **Device Flow** | **Yes** | **Good** | **Right answer for static sites** |
+| OAuth Web Flow + PKCE | No† | Good | GitHub OAuth Apps require `client_secret` regardless |
 | GitHub App | No | Best | Consider for public release |
 
-### Current approach: PAT
+† GitHub's token exchange endpoint (`/login/oauth/access_token`) requires `client_secret` for OAuth Apps even when PKCE parameters are sent — they are silently ignored and the request returns 404. PKCE is only supported for GitHub Apps, which require a backend for the installation flow. Device Flow is the correct no-backend alternative.
 
-User generates a token at GitHub → Settings → Developer settings → Personal access tokens, pastes it into the client settings field. Simple but poor UX.
+### Current approach: PAT (fallback)
+
+User generates a token at GitHub → Settings → Developer settings → Personal access tokens, pastes it into the client login form. Kept as a fallback — useful for developers and private beta.
 
 Required scope: `repo` (read + write access to the player's fork).
 
-### Target approach: OAuth PKCE (Web Flow)
+### Primary approach: OAuth Device Flow
 
-PKCE (Proof Key for Code Exchange, RFC 7636) extends the standard OAuth Authorization Code flow to work without a `CLIENT_SECRET`. The client generates a random `code_verifier`, sends its SHA-256 hash (`code_challenge`) to GitHub during authorization, then presents the raw verifier during the token exchange. GitHub validates that they match — proving the token request came from the same client that started the flow.
-
-**No redirect from an external server needed; no secret in frontend code.**
+No redirect URI. No `CLIENT_SECRET`. Works from any static page. User approves on GitHub; the app polls until authorised.
 
 **Register once:**
 - GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
-- Authorization callback URL: `https://{userid}.github.io/conspiracy` (your Pages URL)
+- Authorization callback URL: your Pages URL (unused by Device Flow, but required by the form)
 - Copy `CLIENT_ID` — safe to commit to frontend code
 - Do **not** generate a `CLIENT_SECRET`
 
@@ -123,124 +123,64 @@ PKCE (Proof Key for Code Exchange, RFC 7636) extends the standard OAuth Authoriz
 const CLIENT_ID = 'YOUR_GITHUB_OAUTH_APP_CLIENT_ID';
 const SCOPES    = 'repo';
 
-function redirectUri() {
-  return window.location.origin + window.location.pathname.replace(/\/$/, '');
-}
-
-function base64url(bytes) {
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-function randomVerifier() {
-  const b = new Uint8Array(32);
-  crypto.getRandomValues(b);
-  return base64url(b);
-}
-
-async function challenge(verifier) {
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-  return base64url(new Uint8Array(hash));
-}
-
-/** Redirect the browser to GitHub's OAuth consent screen. */
-export async function startLogin() {
-  const verifier = randomVerifier();
-  const state    = crypto.randomUUID();
-  sessionStorage.setItem('pkce_verifier', verifier);
-  sessionStorage.setItem('pkce_state', state);
-
-  const q = new URLSearchParams({
-    client_id:             CLIENT_ID,
-    redirect_uri:          redirectUri(),
-    scope:                 SCOPES,
-    state,
-    code_challenge:        await challenge(verifier),
-    code_challenge_method: 'S256',
-  });
-  window.location.href = `https://github.com/login/oauth/authorize?${q}`;
-}
-
-/**
- * If the current URL contains ?code=..., exchange it for a token.
- * Clears the code from the URL. Returns the access token or null.
- */
-export async function handleCallback() {
-  const p    = new URLSearchParams(window.location.search);
-  const code = p.get('code');
-  if (!code) return null;
-
-  if (p.get('state') !== sessionStorage.getItem('pkce_state')) {
-    throw new Error('OAuth state mismatch — possible CSRF');
-  }
-  const verifier = sessionStorage.getItem('pkce_verifier');
-  sessionStorage.removeItem('pkce_verifier');
-  sessionStorage.removeItem('pkce_state');
-  history.replaceState(null, '', location.pathname);  // clean the URL
-
-  const res  = await fetch('https://github.com/login/oauth/access_token', {
+/** Step 1: request a device code. Returns { device_code, user_code, verification_uri, interval }. */
+export async function startDeviceFlow() {
+  const res = await fetch('https://github.com/login/device/code', {
     method:  'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body:    JSON.stringify({
-      client_id:     CLIENT_ID,
-      code,
-      redirect_uri:  redirectUri(),
-      code_verifier: verifier,
-    }),
+    body:    JSON.stringify({ client_id: CLIENT_ID, scope: SCOPES }),
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error_description ?? data.error);
-  return data.access_token;
+  return data;
+}
+
+/** Step 2: poll until the user approves. Returns the access token. */
+export async function pollForToken(device_code, interval_seconds, onTick) {
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  let wait = interval_seconds * 1000;
+  while (true) {
+    await delay(wait);
+    const res  = await fetch('https://github.com/login/oauth/access_token', {
+      method:  'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        client_id:  CLIENT_ID,
+        device_code,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      }),
+    });
+    const data = await res.json();
+    if (data.access_token)                      return data.access_token;
+    if (data.error === 'authorization_pending') { onTick?.('pending');   continue; }
+    if (data.error === 'slow_down')             { wait += 5000; onTick?.('slow_down'); continue; }
+    if (data.error === 'expired_token')         throw new Error('Code expired — try again.');
+    if (data.error === 'access_denied')         throw new Error('Access denied.');
+    throw new Error(data.error_description ?? data.error);
+  }
 }
 ```
 
-**Init flow:**
+**UX flow in `app.js`:**
 
 ```js
-// client/js/app.js
-
-async function init() {
-  // 1. Handle the OAuth callback if redirected back from GitHub
-  const callbackToken = await handleCallback();
-  if (callbackToken) {
-    const me = await fetch('https://api.github.com/user', {
-      headers: { Authorization: `Bearer ${callbackToken}` },
-    }).then(r => r.json());
-    Config.save({ userid: me.login, github_token: callbackToken, github_repo: `${me.login}/conspiracy` });
-  }
-
-  // 2. Check stored token
-  const cfg = Config.load();
-  if (!cfg?.github_token) {
-    showLogin();   // renders a "Login with GitHub" button that calls startLogin()
-    return;
-  }
-
-  await ensureFork(cfg.userid, cfg.github_token);
-  await loadWorldState();
-}
+const { device_code, user_code, verification_uri, interval } = await startDeviceFlow();
+// Show the user: "Go to {verification_uri} and enter {user_code}"
+showDevicePrompt(verification_uri, user_code);
+const token = await pollForToken(device_code, interval, status => updateStatus(status));
+const me    = await fetchGitHubUser(token);
+Config.save({ userid: me.login, github_token: token, github_repo: `${me.login}/conspiracy` });
+initApp();
 ```
 
 **All API calls go through a single wrapper** that detects 401 and triggers re-auth:
 
 ```js
-// client/js/github.js
-
-export class AuthError extends Error {}
-
-async _request(method, path, body) {
-  const res = await fetch(`https://api.github.com${path}`, {
-    method,
-    headers: { ...this._headers(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 401) throw new AuthError('Token expired');
-  if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`);
-  return res.json();
-}
+// client/js/github.js — _request method
+if (res.status === 401) throw new AuthError('Token expired');
 ```
 
-In `app.js`, catch `AuthError` → `Config.clear()` → `startLogin()`.
+In `app.js`, catch `AuthError` → `Config.clear()` → `showLogin('Session expired')`.
 
 ---
 
@@ -503,9 +443,8 @@ const log    = await fetch(logUrl).then((r) => r.text());
 
 | Situation | API status | Handling |
 |---|---|---|
-| Token missing | — | Run PKCE login flow |
-| Token expired/revoked | 401 | Clear token, re-run PKCE login |
-| OAuth state mismatch | — | Abort and show error (possible CSRF) |
+| Token missing | — | Run Device Flow |
+| Token expired/revoked | 401 | Clear token, re-run Device Flow |
 | Fork doesn't exist | 404 on repo fetch | Create fork, wait for it |
 | Branch already exists | 422 on ref creation | Proceed — file write still works |
 | File already exists on branch | Need SHA | Fetch existing file SHA, include in PUT |
