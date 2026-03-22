@@ -1,4 +1,4 @@
-# Realm — Conspiracy
+# Conspiracy
 
 A darkly humorous turn-based civilization simulation. Players accumulate power, scale agents and long-term projects, and compete against rivals — while their dominion threatens to collapse under its own weight.
 
@@ -32,7 +32,7 @@ Establish the data layer. Everything else builds on this.
 
 - [ ] Define append-only timestamped JSON schemas for `factions`, `heroes`, `regions`, `economy`, `belief` ([`timeflow.md`](docs/timeflow.md))
 - [ ] Implement `world_at(records, turn)` — constructs current world view from record log ([`timeflow.md`](docs/timeflow.md))
-- [ ] Set up canonical `realm/` repo structure: `/{userid}/world/`, `/shared/`, `/.github/workflows/`
+- [ ] Set up canonical `conspiracy/` repo structure: `/{userid}/world/`, `/shared/`, `/.github/workflows/`
 - [ ] `shared/turn.json` — global turn counter and deadline
 - [ ] `{userid}/world/meta.json` — per-player turn position
 - [ ] Seed canonical world state: Earth regions, starting factions, initial tech levels

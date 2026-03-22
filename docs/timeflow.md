@@ -176,7 +176,7 @@ Each player's fork tracks their current turn in `{userid}/world/meta.json`:
 {
   "turn": 30,
   "last_resolved": "2026-03-20T14:32:00Z",
-  "fork_of": "realm-canonical/realm",
+  "fork_of": "conspiracy-canonical/conspiracy",
   "player": "alice"
 }
 ```

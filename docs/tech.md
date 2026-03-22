@@ -219,7 +219,7 @@ At integer thresholds, additional capabilities unlock:
 | Industrial Engineering | 5 | Policy available: Industrial Drive (+20% output, +5 unrest/turn) |
 | Industrial Engineering | 8 | Building unlocked: Fusion Reactor (requires Energy investment) |
 | Maritime Operations | 3 | Region type available: Coastal Extraction Zone |
-| Maritime Operations | 6 | Region type available: Ocean Subrealm |
+| Maritime Operations | 6 | Region type available: Ocean Sub-conspiracy |
 | Aerospace | 4 | Building unlocked: Orbital Station |
 | Aerospace | 7 | Region type available: Off-World Colony |
 | Ideological Technology | 3 | Mission available: Precision Propaganda (targets specific stratum) |
@@ -238,7 +238,7 @@ Tech levels are tracked at the Dominion level by default. However, regions can d
 - **Core Homeland** — matches Dominion average exactly.
 - **Colony** — lags the Dominion average by up to −1.5 in all directions (distance from research centres).
 - **Occupied Territory** — degrades at 2× base decay rate (institutional knowledge drains under occupation).
-- **Subrealm** — separate tech levels entirely; runs on Archival Trust economy; may exceed surface levels in Industrial Engineering and Life Sciences due to historical depth.
+- **Sub-conspiracy** — separate tech levels entirely; runs on Archival Trust economy; may exceed surface levels in Industrial Engineering and Life Sciences due to historical depth.
 
 Regional variance matters for adjacency diffusion — a high-tech colony in a low-tech region can export tech to that region even if the Dominion core is far away.
 

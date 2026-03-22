@@ -5,7 +5,7 @@
 import { dbg } from './debug.js';
 
 /** The upstream repo all player forks are created from. */
-const CANONICAL_REPO = 'dataved/realm';
+const CANONICAL_REPO = 'dataved/conspiracy';
 
 /** Thrown when the GitHub API responds with 401. Caller should re-auth. */
 export class AuthError extends Error {
@@ -92,7 +92,7 @@ export class GitHubClient {
   // ── Onboarding helpers ─────────────────────────────────────────────
 
   /**
-   * Fork the canonical realm repo into the authenticated user's account.
+   * Fork the canonical conspiracy repo into the authenticated user's account.
    * Returns the fork object. GitHub creates forks asynchronously — callers
    * should poll isForkReady() after this returns.
    */
@@ -103,7 +103,7 @@ export class GitHubClient {
   /** Returns true once the player's fork exists and is accessible. */
   async isForkReady(userid) {
     try {
-      await this._get(`/repos/${userid}/realm`);
+      await this._get(`/repos/${userid}/conspiracy`);
       return true;
     } catch {
       return false;
@@ -119,17 +119,17 @@ export class GitHubClient {
     const path   = `world/${userid}/turn.json`;
 
     // Get HEAD of main on the fork
-    const ref = await this._get(`/repos/${userid}/realm/git/ref/heads/main`);
+    const ref = await this._get(`/repos/${userid}/conspiracy/git/ref/heads/main`);
     const sha  = ref.object.sha;
 
     // Create the join branch
-    await this._post(`/repos/${userid}/realm/git/refs`, {
+    await this._post(`/repos/${userid}/conspiracy/git/refs`, {
       ref: `refs/heads/${branch}`,
       sha,
     });
 
     // Commit the initial world file
-    await this._put(`/repos/${userid}/realm/contents/${path}`, {
+    await this._put(`/repos/${userid}/conspiracy/contents/${path}`, {
       message: `Initialize world for ${userid}`,
       content: btoa(JSON.stringify({ turn: 0 }, null, 2)),
       branch,

@@ -138,7 +138,7 @@ The game is divided into two components with a clean boundary. **Python owns all
 ```
 
 **Data flow per turn:**
-1. Player opens the client at `https://{userid}.github.io/realm`
+1. Player opens the client at `https://{userid}.github.io/conspiracy`
 2. Client fetches world state JSON from the player's fork via GitHub raw content API
 3. Player composes orders in the Orders panel; client opens a PR via GitHub API
 4. CI triggers Python simulation engine on the PR
@@ -183,10 +183,10 @@ Player can overlay their own stats against rivals' public metrics (read from riv
 
 ### 3.2 GitHub as World Storage
 
-Each player world is a **fork** of the canonical `realm` repository. World state is serialised as versioned JSON committed to that fork.
+Each player world is a **fork** of the canonical `conspiracy` repository. World state is serialised as versioned JSON committed to that fork.
 
 ```
-realm/                             ← canonical upstream (god-tier defaults)
+conspiracy/                        ← canonical upstream (god-tier defaults)
   /{userid}/                       ← all objects owned by this player
     world/
       factions.json
@@ -284,11 +284,11 @@ Three simulation layers run semi-autonomously each turn. Each layer has its own 
 
 | Layer | Scope | Key systems | Player access |
 |---|---|---|---|
-| Surface (Realms) | Nations, factions, politics | Trust economy, propaganda, policy, military | Full — primary play surface |
-| Underworld (Subrealms) | Dwarfs, daemons, faith economies | Underground infrastructure, forgotten tech, Archival Trust | Unlocked via mission chain |
+| Surface (Conspiracies) | Nations, factions, politics | Trust economy, propaganda, policy, military | Full — primary play surface |
+| Underworld (Sub-conspiracies) | Dwarfs, daemons, faith economies | Underground infrastructure, forgotten tech, Archival Trust | Unlocked via mission chain |
 | Digital layer | Simulation metadata, god-tier management | Divine Simulator, entropy tracking, reality maintenance | Late-game / Forbidden Knowledge branch |
 
-Layers interact. A Subrealm faith collapse below the surface can spike Entropy in the surface region above it. A Digital Enclave belief failure can corrupt event logs. These cross-layer effects are the simulation's most chaotic outputs — and the most interesting Chronicle entries.
+Layers interact. A Sub-conspiracy faith collapse below the surface can spike Entropy in the surface region above it. A Digital Enclave belief failure can corrupt event logs. These cross-layer effects are the simulation's most chaotic outputs — and the most interesting Chronicle entries.
 
 ### 4.3 Event System
 

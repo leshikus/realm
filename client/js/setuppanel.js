@@ -2,7 +2,7 @@
  * setuppanel.js — Onboarding: fork → modify → PR.
  *
  * Three sequential steps a new player completes once:
- *  1. Fork the canonical realm repo
+ *  1. Fork the canonical conspiracy repo
  *  2. Create an initial world file on the fork (sample modification)
  *  3. Open a PR from the fork back to the canonical repo
  */

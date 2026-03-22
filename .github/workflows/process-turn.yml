@@ -51,8 +51,8 @@ jobs:
 
       - name: Commit resolved world state
         run: |
-          git config user.name  "realm-ci"
-          git config user.email "ci@realm.game"
+          git config user.name  "conspiracy-ci"
+          git config user.email "ci@conspiracy.game"
           git fetch origin main
           git merge origin/main -X theirs --no-edit || true
           git add world/

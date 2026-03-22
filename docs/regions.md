@@ -34,7 +34,7 @@ All regions belong to one of three political archetypes, inherited from the domi
 |---|---|---|---|
 | **Federation of Belief** | Citizens vote for their gods; consensus drives everything | Belief | Theological schism; electoral miracle fraud |
 | **Syndicate of Necessity** | Corporations worship efficiency; everything is a transaction | Trust | Regulatory capture; efficiency cults |
-| **Realm of Regret** | Monarchs rule out of habit; legitimacy is mostly aesthetic | Influence | Dynastic instability; nostalgia riots |
+| **Conspiracy of Regret** | Monarchs rule out of habit; legitimacy is mostly aesthetic | Influence | Dynastic instability; nostalgia riots |
 
 A region's archetype shapes which events fire, which missions are available, and how the population responds to ideology changes.
 
@@ -124,7 +124,7 @@ Every region in the simulation carries these fields in its JSON state:
 |---|---|---|
 | `id` | string | Unique identifier (e.g., `"the_pale_midlands"`) |
 | `name` | string | Display name |
-| `archetype` | enum | `federation_of_belief`, `syndicate_of_necessity`, `realm_of_regret` |
+| `archetype` | enum | `federation_of_belief`, `syndicate_of_necessity`, `conspiracy_of_regret` |
 | `controller` | string | Faction ID currently in control |
 | `stability` | int (0–100) | Below 30: unrest events. Below 10: revolt. |
 | `entropy` | int (0–100) | Accumulated instability. Above 75: crisis event threshold. |
@@ -136,7 +136,7 @@ Every region in the simulation carries these fields in its JSON state:
 | `active_policies` | list | Currently running policies (from missions.md §2.2) |
 | `missions_completed` | list | Claimed missions scoped to this region |
 | `events_active` | list | Ongoing event chains |
-| `type` | enum | `core_homeland`, `colony`, `occupied_territory`, `subrealm`, `digital_enclave` |
+| `type` | enum | `core_homeland`, `colony`, `occupied_territory`, `sub-conspiracy`, `digital_enclave` |
 
 ---
 
@@ -176,16 +176,16 @@ Taken by force; governed by necessity.
 - Belief Composition rapidly drifts away from Dominion ideology
 - Can be released as a Protectorate (installs puppet; reduces Entropy, reduces control)
 
-## 5.4 Subrealm
+## 5.4 Sub-conspiracy
 
 Underground domains — cavern systems, forgotten bureaucratic archives, and faith-based economies operating on entirely different axioms.
 
 - Surface missions unavailable
-- Unique Subrealm mission branch unlocked (see §8.2)
+- Unique Sub-conspiracy mission branch unlocked (see §8.2)
 - Population: Dwarfs, Software Daemons, Archive Priests (distinct strata from surface types)
 - Economy runs on **Archival Trust** (a secondary Trust-variant; convertible but lossy)
-- Entropy behaves differently: Subrealms accumulate structural decay, not political instability
-- Connecting a Subrealm to the surface costs significant Paperwork; the forms have not been updated since the last era
+- Entropy behaves differently: Sub-conspiracys accumulate structural decay, not political instability
+- Connecting a Sub-conspiracy to the surface costs significant Paperwork; the forms have not been updated since the last era
 
 ## 5.5 Digital Enclave
 
@@ -204,7 +204,7 @@ Regions that have partially or fully migrated to a digital substrate. Reality is
 The default world map is Earth — macro-level regions corresponding to real geopolitical blocs. Each region is assigned a Conspiracy archetype, starting resource profile, and unique modifier. Sub-regions (individual nations) are represented as provinces within each macro-region and can be split out by events or player action.
 
 // All regions use the same JSON schema. Region IDs use snake_case geography names.
-// A procedurally generated fictional map is available as an alternate start ("The Realms" scenario).
+// A procedurally generated fictional map is available as an alternate start ("The Conspiracies" scenario).
 
 ## 6.1 Region Map
 
@@ -264,7 +264,7 @@ The default world map is Earth — macro-level regions corresponding to real geo
 | Field | Value |
 |---|---|
 | **Sub-regions** | Poland, Balkans, Baltic States, Hungary/Czech/Slovakia |
-| **Archetype** | Realm of Regret (transitional) |
+| **Archetype** | Conspiracy of Regret (transitional) |
 | **Starting Stability** | 50 |
 | **Starting Entropy** | 35 |
 | **Key Resources** | Industrial Output (moderate), Agricultural Output (moderate), Guild Revenue (moderate) |
@@ -281,7 +281,7 @@ The default world map is Earth — macro-level regions corresponding to real geo
 | Field | Value |
 |---|---|
 | **Sub-regions** | European Russia, Siberia, Central Asia (Kazakhstan, Uzbekistan, etc.) |
-| **Archetype** | Realm of Regret |
+| **Archetype** | Conspiracy of Regret |
 | **Starting Stability** | 55 |
 | **Starting Entropy** | 45 |
 | **Key Resources** | Industrial Output (high), Trade Volume (moderate — mostly export pipelines) |
@@ -349,7 +349,7 @@ The default world map is Earth — macro-level regions corresponding to real geo
 | Field | Value |
 |---|---|
 | **Sub-regions** | China, Korea (North/South), Japan, Taiwan |
-| **Archetype** | Syndicate of Necessity (China, Korea) / Realm of Regret (Japan) |
+| **Archetype** | Syndicate of Necessity (China, Korea) / Conspiracy of Regret (Japan) |
 | **Starting Stability** | 65 |
 | **Starting Entropy** | 30 |
 | **Key Resources** | Industrial Output (very high), Scholarly Output (high), Trade Volume (very high) |
@@ -431,7 +431,7 @@ The default world map is Earth — macro-level regions corresponding to real geo
 
 ## 6.2 Procedural / Fictional Map (Optional Start)
 
-Selecting **"The Realms" scenario** at game start replaces Earth with a procedurally generated fictional world — Realms, Subrealms, and Digital Enclaves set in the Era of Managed Collapse. Mechanics are identical; aesthetics, region names, and event flavour text change.
+Selecting **"The Conspiracies" scenario** at game start replaces Earth with a procedurally generated fictional world — Conspiracies, Sub-conspiracies, and Digital Enclaves set in the Era of Managed Collapse. Mechanics are identical; aesthetics, region names, and event flavour text change.
 
 // Same JSON schema. Different region IDs and flavour. All systems interoperate.
 
@@ -520,16 +520,16 @@ Trade routes connect adjacent regions and generate Trust and Influence for both 
 - Enhanced by: Trade Hub mission, Merchant Guilds mission, Guild Revenue high
 - Each active trade route generates a small Paperwork cost (forms, tariffs, complaints)
 
-## 8.2 Subrealm Access
+## 8.2 Sub-conspiracy Access
 
-Connecting a surface region to an adjacent Subrealm is a multi-mission process:
+Connecting a surface region to an adjacent Sub-conspiracy is a multi-mission process:
 
-1. **Survey the Depth** — reveal the Subrealm and its resource deposits
+1. **Survey the Depth** — reveal the Sub-conspiracy and its resource deposits
 2. **Negotiate Access Rights** — file Form SR-4/A with the Under-Bureau (requires Paperwork investment)
 3. **Establish Surface Link** — build a connection infrastructure (turns and Trust)
-4. **Integrate (Optional)** — convert the Subrealm into a Colony (very high Paperwork; high unrest among Subrealm population)
+4. **Integrate (Optional)** — convert the Sub-conspiracy into a Colony (very high Paperwork; high unrest among Sub-conspiracy population)
 
-Subrealms that are accessed but not integrated generate Archival Trust independently; players receive a share based on influence penetration.
+Sub-conspiracys that are accessed but not integrated generate Archival Trust independently; players receive a share based on influence penetration.
 
 ## 8.3 Regional Events
 
@@ -588,7 +588,7 @@ Each region has a unique modifier profile derived from its lore, resource mix, a
 - **Every region is a distinct problem.** No two regions should respond to the same policy identically. Unique modifiers and different population strata compositions mean solutions do not transfer.
 - **Entropy is irreversible without active effort.** It will not decay on its own. Players who ignore entropy accumulation will eventually pay for it at the worst possible time.
 - **Stability can be faked.** A region at Stability 60 with Entropy 80 looks fine on the surface. The simulation knows better. UI should not hide this but should require the player to look for it.
-- **Subrealms are optional depth.** They should reward players who engage with them but never block core progression for players who ignore them.
+- **Sub-conspiracys are optional depth.** They should reward players who engage with them but never block core progression for players who ignore them.
 - **Satirical tone in all events.** Region events should read like dispatches from a tired, underfunded Ministry that has seen everything before and is no longer surprised.
 
 ---

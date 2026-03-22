@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       Config.save({
         userid:       me.login,
         github_token: token,
-        github_repo:  `${me.login}/realm`,
+        github_repo:  `${me.login}/conspiracy`,
       });
       dbg.info('OAuth callback: token saved', { userid: me.login });
     }
@@ -90,7 +90,7 @@ function showLogin(errorMsg) {
         headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
       }).then(r => r.ok ? r.json() : Promise.reject(new Error('Invalid token')));
 
-      Config.save({ userid: me.login ?? userid, github_token: token, github_repo: `${me.login ?? userid}/realm` });
+      Config.save({ userid: me.login ?? userid, github_token: token, github_repo: `${me.login ?? userid}/conspiracy` });
       initApp();
     } catch (err) {
       errEl.textContent = `Token error: ${err.message}`;

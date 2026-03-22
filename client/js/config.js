@@ -1,6 +1,6 @@
 /** Config — stored in localStorage */
 export const Config = {
-  KEY: 'realm_config',
+  KEY: 'conspiracy_config',
 
   load() {
     const raw = localStorage.getItem(this.KEY);

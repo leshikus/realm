@@ -16,7 +16,7 @@ There is no backend. `CLIENT_SECRET` cannot be stored in frontend code.
 ## Full Turn Flow
 
 ```
-Player visits https://{userid}.github.io/realm
+Player visits https://{userid}.github.io/conspiracy
     │
     ▼
 [1] Auth check — is a token in localStorage?
@@ -25,8 +25,8 @@ Player visits https://{userid}.github.io/realm
     │
     ▼
 [2] Load world state
-    │   GET raw.githubusercontent.com/{userid}/realm/main/shared/turn.json
-    │   GET raw.githubusercontent.com/{userid}/realm/main/{userid}/world/*.json
+    │   GET raw.githubusercontent.com/{userid}/conspiracy/main/shared/turn.json
+    │   GET raw.githubusercontent.com/{userid}/conspiracy/main/{userid}/world/*.json
     │
     ▼
 [3] Player composes orders in the Orders panel
@@ -40,7 +40,7 @@ Player visits https://{userid}.github.io/realm
     │
     ▼
 [5] Poll PR until CI resolves
-    │   GET  api.github.com/repos/{userid}/realm/pulls/{pr_number}
+    │   GET  api.github.com/repos/{userid}/conspiracy/pulls/{pr_number}
     │   GET  api.github.com → check-runs on head commit
     │
     ▼
@@ -55,7 +55,7 @@ Player visits https://{userid}.github.io/realm
 
 ## Step 0: Fork Setup (one-time)
 
-Each player's world lives in their fork of the canonical `realm` repo. This is done once when they join.
+Each player's world lives in their fork of the canonical `conspiracy` repo. This is done once when they join.
 
 The client should detect a missing fork on first load and prompt the player to fork:
 
@@ -64,10 +64,10 @@ The client should detect a missing fork on first load and prompt the player to f
 
 export async function ensureFork(userid, token) {
   // Check if the fork exists
-  const res = await githubFetch(`/repos/${userid}/realm`);
+  const res = await githubFetch(`/repos/${userid}/conspiracy`);
   if (res.status === 404) {
     // Fork the canonical repo
-    await githubFetch("/repos/realm-canonical/realm/forks", {
+    await githubFetch("/repos/conspiracy-canonical/conspiracy/forks", {
       method: "POST",
     });
     // GitHub forks are async — poll until available
@@ -79,7 +79,7 @@ async function waitForFork(userid) {
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
   for (let i = 0; i < 20; i++) {
     await delay(3000);
-    const res = await githubFetch(`/repos/${userid}/realm`);
+    const res = await githubFetch(`/repos/${userid}/conspiracy`);
     if (res.ok) return;
   }
   throw new Error("Fork did not appear after 60s.");
@@ -113,7 +113,7 @@ PKCE (Proof Key for Code Exchange, RFC 7636) extends the standard OAuth Authoriz
 
 **Register once:**
 - GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
-- Authorization callback URL: `https://{userid}.github.io/realm` (your Pages URL)
+- Authorization callback URL: `https://{userid}.github.io/conspiracy` (your Pages URL)
 - Copy `CLIENT_ID` — safe to commit to frontend code
 - Do **not** generate a `CLIENT_SECRET`
 
@@ -206,7 +206,7 @@ async function init() {
     const me = await fetch('https://api.github.com/user', {
       headers: { Authorization: `Bearer ${callbackToken}` },
     }).then(r => r.json());
-    Config.save({ userid: me.login, github_token: callbackToken, github_repo: `${me.login}/realm` });
+    Config.save({ userid: me.login, github_token: callbackToken, github_repo: `${me.login}/conspiracy` });
   }
 
   // 2. Check stored token
@@ -255,10 +255,10 @@ const RAW = "https://raw.githubusercontent.com";
 
 export async function loadWorldState() {
   const userid = getUserid();
-  const base   = `${RAW}/${userid}/realm/main`;
+  const base   = `${RAW}/${userid}/conspiracy/main`;
 
   const [turn, factions, heroes, regions, economy, belief] = await Promise.all([
-    fetchJSON(`${RAW}/realm-canonical/realm/main/shared/turn.json`),
+    fetchJSON(`${RAW}/conspiracy-canonical/conspiracy/main/shared/turn.json`),
     fetchJSON(`${base}/${userid}/world/factions.json`),
     fetchJSON(`${base}/${userid}/world/heroes.json`),
     fetchJSON(`${base}/${userid}/world/regions.json`),
@@ -339,7 +339,7 @@ This is the core write operation. Four GitHub API calls in sequence:
 
 export async function submitOrders(orders) {
   const userid  = getUserid();
-  const repo    = `${userid}/realm`;
+  const repo    = `${userid}/conspiracy`;
   const turn    = orders.turn;
   const branch  = `orders/turn-${String(turn).padStart(3, "0")}`;
   const filePath = `${userid}/orders/turn_${String(turn).padStart(3, "0")}_orders.json`;
@@ -493,7 +493,7 @@ async function onTurnResolved() {
 The event log is also a raw-content fetch:
 
 ```js
-const logUrl = `${RAW}/${userid}/realm/main/${userid}/history/events.log`;
+const logUrl = `${RAW}/${userid}/conspiracy/main/${userid}/history/events.log`;
 const log    = await fetch(logUrl).then((r) => r.text());
 ```
 

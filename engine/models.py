@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 class FactionType(str, Enum):
     FEDERATION = "federation"       # citizens vote for gods
     SYNDICATE = "syndicate"         # corporations worship efficiency
-    REALM = "realm"                 # monarchs rule out of habit
+    CONSPIRACY = "conspiracy"       # monarchs rule out of habit
 
 
 class DoctrineType(str, Enum):

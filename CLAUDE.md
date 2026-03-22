@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Realm is a turn-based civilization simulation game. Players fork this repo; each fork holds their world state as JSON files. Orders are submitted as PRs, GitHub Actions runs the Python engine to resolve the turn, commits the new state, and auto-merges. The browser client (deployed to GitHub Pages) talks to GitHub's API directly — there is no custom backend.
+Conspiracy is a turn-based civilization simulation game. Players fork this repo; each fork holds their world state as JSON files. Orders are submitted as PRs, GitHub Actions runs the Python engine to resolve the turn, commits the new state, and auto-merges. The browser client (deployed to GitHub Pages) talks to GitHub's API directly — there is no custom backend.
 
 ## Commands
 

@@ -7,7 +7,7 @@
  *   On login btn:  await startLogin();
  */
 
-const CLIENT_ID = 'https://leshikus.github.io/realm';
+const CLIENT_ID = 'https://leshikus.github.io/conspiracy';
 const SCOPES    = 'repo';
 
 function redirectUri() {
