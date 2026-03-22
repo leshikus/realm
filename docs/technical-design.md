@@ -7,6 +7,25 @@
 
 ---
 
+## Documentation Index
+
+All design documents for *Conspiracy* live in `docs/`. Each covers a distinct system. This document is the technical hub — it describes the architecture and references the others.
+
+| Document | System | What it covers |
+|---|---|---|
+| [`lore.md`](lore.md) | World & narrative | Setting, factions, core pillars, economy of belief, philosophy |
+| [`regions.md`](regions.md) | Regions | Resource model, population strata, real-world Earth regions, stability/entropy/belief mechanics |
+| [`missions.md`](missions.md) | Missions & policies | JSON schemas, requirement types, reward types, mission trees, policy execution flow |
+| [`tech.md`](tech.md) | Technology | Continuous tech levels, 7 directions, investment/decay/diffusion formula, education multiplier, crisis loss |
+| [`role-playing.md`](role-playing.md) | Heroes | Skill Graph, Personality Matrix, mission duration/quality, fatigue, trait acquisition, Syndicate procurement |
+| [`menus.md`](menus.md) | UI & menus | Full client panel layout, Orders panel, Chronicle/Event Viewer, Statistics, all menu screens |
+| [`timeflow.md`](timeflow.md) | World state & async play | Timestamped append-only records, `world_at()`, cross-timeline interactions, file compaction |
+| [`oauth.md`](oauth.md) | Auth & order submission | GitHub PKCE OAuth, fork setup, order PR submission flow, CI polling, error reference |
+| [`llm.md`](llm.md) | LLM integration | Ollama setup, call sites (event narration, Chronicle, trait mutation, faction proclamations, hero dialogue), template fallback |
+| [`lip-sync.md`](lip-sync.md) | Portraits & voice | Stable Diffusion portrait generation, TTS (Kokoro/ElevenLabs), Rhubarb lip-sync, Canvas animation |
+
+---
+
 ## 1. Overview
 
 *Conspiracy* is a darkly humorous civilization simulation sandbox. Players influence (not rule) a multi-layered dominion through bureaucracy, hero management, and ideological manipulation. The game draws inspiration from Crusader Kings II, Dwarf Fortress, Victoria, RimWorld, Tyranny, and Hearts of Iron IV.
@@ -273,6 +292,8 @@ Layers interact. A Subrealm faith collapse below the surface can spike Entropy i
 
 ### 4.3 Event System
 
+> Narrative generation for events is handled by the LLM integration — see [`llm.md`](llm.md).
+
 Events are the primary storytelling mechanism. They fire from faction state, hero actions, belief thresholds, and entropy levels. They chain through AI gossip networks — one event can trigger three more, each affecting different actors.
 
 - Event templates stored as JSON; support runtime narrative generation (LLM API or JSON-template fallback)
@@ -285,6 +306,8 @@ Events are the primary storytelling mechanism. They fire from faction state, her
 ---
 
 ## 5. Core Systems
+
+> See [`regions.md`](regions.md) for full resource model, population strata, Earth region profiles, and stability/entropy mechanics. See [`missions.md`](missions.md) for policy and mission JSON schemas, execution flow, and mission trees. See [`tech.md`](tech.md) for the continuous technology level system.
 
 ### 5.1 Trust Economy
 
@@ -347,6 +370,8 @@ Each faction runs an autonomous simulation each turn:
 **Player experience:** The player is never the only actor. Factions pursue goals, register conspiracies, build alliances, and interfere with the player's operations whether or not the player interacts with them. The world continues without the player's permission.
 
 ### 5.6 Hero System
+
+> Full hero data model, skill growth rules, trait acquisition thresholds, fatigue mechanics, mission duration/quality formulas, and Syndicate procurement schema are in [`role-playing.md`](role-playing.md).
 
 Heroes are procedural agents — unstable accumulations of ambition, trauma, and bad mentorship.
 
@@ -436,6 +461,8 @@ CI resolves:
 
 ---
 
+> Full UI layout, all panel designs, Orders panel, Chronicle/Event Viewer, Statistics module, and every menu screen are documented in [`menus.md`](menus.md).
+
 ## 6. Player Actions
 
 | Action | Mechanism | What can go wrong |
@@ -465,6 +492,8 @@ CI resolves:
 
 ---
 
+> GitHub PKCE OAuth flow, fork setup, order PR submission (4-step API sequence), CI polling, and error handling are fully documented in [`oauth.md`](oauth.md). Async play, timestamped world state, cross-timeline interactions, and the `world_at()` algorithm are in [`timeflow.md`](timeflow.md).
+
 ## 8. Multiplayer
 
 - Each player's world is a fork; multiplayer interaction happens via PRs between forks
@@ -476,6 +505,8 @@ CI resolves:
 **Player experience:** In multiplayer, the player is never the most dangerous actor in their own story. Other Dominions are running their own conspiracies. The Bureau of Conspiracies is logging all of them. Some are registered. Most are not.
 
 ---
+
+> Portrait generation (Stable Diffusion), voice synthesis (Kokoro/ElevenLabs), Rhubarb lip-sync, and Canvas animation are in [`lip-sync.md`](lip-sync.md). LLM-generated hero dialogue, faction proclamations, and Chronicle entries are in [`llm.md`](llm.md).
 
 ## 9. Single-Player
 
