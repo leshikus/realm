@@ -18,8 +18,8 @@ const SCOPES    = 'repo';
 export async function startDeviceFlow() {
   const res = await fetch('https://github.com/login/device/code', {
     method:  'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ client_id: CLIENT_ID, scope: SCOPES }),
+    headers: { Accept: 'application/json' },
+    body:    new URLSearchParams({ client_id: CLIENT_ID, scope: SCOPES }),
   });
   if (!res.ok) throw new Error(`Device flow init failed: ${res.status}`);
   const data = await res.json();
@@ -40,8 +40,8 @@ export async function pollForToken(device_code, interval_seconds, onTick) {
     await delay(wait);
     const res  = await fetch('https://github.com/login/oauth/access_token', {
       method:  'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
+      headers: { Accept: 'application/json' },
+      body:    new URLSearchParams({
         client_id:  CLIENT_ID,
         device_code,
         grant_type: 'urn:ietf:params:oauth:grant-type:device_code',

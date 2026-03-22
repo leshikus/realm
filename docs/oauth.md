@@ -479,4 +479,4 @@ PKCE prevents authorization code interception attacks. The `state` parameter pre
 
 - **GitHub API** (`api.github.com`): full CORS support; all write calls work from the browser
 - **Raw content** (`raw.githubusercontent.com`): CORS supported for GET; no auth header needed for public repos
-- **OAuth PKCE endpoints** (`github.com/login/oauth/...`): CORS supported only if `Accept: application/json` is sent — without it GitHub returns `application/x-www-form-urlencoded` and the preflight fails
+- **OAuth Device Flow endpoints** (`github.com/login/...`): Send body as `application/x-www-form-urlencoded` (`URLSearchParams`), **not** JSON. `Content-Type: application/json` triggers a CORS preflight that GitHub's device endpoints do not handle — the browser blocks the request. Keep `Accept: application/json` to get a JSON response; `Accept` is a CORS-safelisted header and does not trigger a preflight.
