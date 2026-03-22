@@ -20,8 +20,8 @@ Player visits https://{userid}.github.io/realm
     │
     ▼
 [1] Auth check — is a token in localStorage?
-    │   No → run Device Flow → get token → store in localStorage
-    │   Yes → use it (re-auth on 401)
+    │   No → PKCE login → redirect to GitHub → callback → get token → store in localStorage
+    │   Yes → use it (clear + re-auth on 401)
     │
     ▼
 [2] Load world state
@@ -94,124 +94,153 @@ async function waitForFork(userid) {
 
 | Method | Works without backend? | UX | Notes |
 |---|---|---|---|
-| PAT (manual) | Yes | Poor | Current approach; fine for private beta |
-| OAuth Web Flow | No | Good | Needs backend to hold `CLIENT_SECRET` |
-| **Device Flow** | **Yes** | **Good** | Right answer for static sites |
+| PAT (manual) | Yes | Poor | Fine for private beta; no user-friendly flow |
+| **OAuth Web Flow + PKCE** | **Yes** | **Good** | **Right answer for static sites** |
+| Device Flow | Yes | Acceptable | Requires user to manually copy a code |
 | GitHub App | No | Best | Consider for public release |
 
 ### Current approach: PAT
 
-User generates a token at GitHub → Settings → Developer settings → Personal access tokens, pastes it into the client settings field.
-
-```js
-// client/config.js
-export const getToken  = () => localStorage.getItem("github_token");
-export const setToken  = (t) => localStorage.setItem("github_token", t);
-export const getUserid = () => localStorage.getItem("github_userid");
-export const setUserid = (u) => localStorage.setItem("github_userid", u);
-```
+User generates a token at GitHub → Settings → Developer settings → Personal access tokens, pastes it into the client settings field. Simple but poor UX.
 
 Required scope: `repo` (read + write access to the player's fork).
 
-### Target approach: OAuth Device Flow
+### Target approach: OAuth PKCE (Web Flow)
 
-No redirect URI. No `CLIENT_SECRET`. Works from any static page.
+PKCE (Proof Key for Code Exchange, RFC 7636) extends the standard OAuth Authorization Code flow to work without a `CLIENT_SECRET`. The client generates a random `code_verifier`, sends its SHA-256 hash (`code_challenge`) to GitHub during authorization, then presents the raw verifier during the token exchange. GitHub validates that they match — proving the token request came from the same client that started the flow.
+
+**No redirect from an external server needed; no secret in frontend code.**
 
 **Register once:**
 - GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
-- Authorization callback URL: your Pages URL (unused by Device Flow)
+- Authorization callback URL: `https://{userid}.github.io/realm` (your Pages URL)
 - Copy `CLIENT_ID` — safe to commit to frontend code
 - Do **not** generate a `CLIENT_SECRET`
 
 ```js
-// client/auth.js
+// client/js/auth.js
 
-const CLIENT_ID = "your_client_id_here";
-const SCOPES    = "repo";
+const CLIENT_ID = 'YOUR_GITHUB_OAUTH_APP_CLIENT_ID';
+const SCOPES    = 'repo';
 
-export async function startDeviceFlow() {
-  const res = await fetch("https://github.com/login/device/code", {
-    method:  "POST",
-    headers: { "Accept": "application/json", "Content-Type": "application/json" },
-    body:    JSON.stringify({ client_id: CLIENT_ID, scope: SCOPES }),
-  });
-  const { device_code, user_code, verification_uri, interval } = await res.json();
-
-  // Show the user: "Go to {verification_uri} and enter {user_code}"
-  renderAuthPrompt(verification_uri, user_code);
-
-  const token = await pollForToken(device_code, interval);
-  setToken(token);
-
-  // Also store userid: who is this token for?
-  const me = await (await githubFetch("/user")).json();
-  setUserid(me.login);
-
-  return token;
+function redirectUri() {
+  return window.location.origin + window.location.pathname.replace(/\/$/, '');
 }
 
-async function pollForToken(device_code, interval_seconds) {
-  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-  while (true) {
-    await delay(interval_seconds * 1000);
-    const res = await fetch("https://github.com/login/oauth/access_token", {
-      method:  "POST",
-      headers: { "Accept": "application/json", "Content-Type": "application/json" },
-      body:    JSON.stringify({
-        client_id:  CLIENT_ID,
-        device_code,
-        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-      }),
-    });
-    const data = await res.json();
-    if (data.access_token)               return data.access_token;
-    if (data.error === "authorization_pending") continue;
-    if (data.error === "slow_down")      { interval_seconds += 5; continue; }
-    if (data.error === "expired_token")  throw new Error("Auth expired. Retry.");
-    if (data.error === "access_denied")  throw new Error("Access denied.");
-    throw new Error(`OAuth error: ${data.error}`);
+function base64url(bytes) {
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function randomVerifier() {
+  const b = new Uint8Array(32);
+  crypto.getRandomValues(b);
+  return base64url(b);
+}
+
+async function challenge(verifier) {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return base64url(new Uint8Array(hash));
+}
+
+/** Redirect the browser to GitHub's OAuth consent screen. */
+export async function startLogin() {
+  const verifier = randomVerifier();
+  const state    = crypto.randomUUID();
+  sessionStorage.setItem('pkce_verifier', verifier);
+  sessionStorage.setItem('pkce_state', state);
+
+  const q = new URLSearchParams({
+    client_id:             CLIENT_ID,
+    redirect_uri:          redirectUri(),
+    scope:                 SCOPES,
+    state,
+    code_challenge:        await challenge(verifier),
+    code_challenge_method: 'S256',
+  });
+  window.location.href = `https://github.com/login/oauth/authorize?${q}`;
+}
+
+/**
+ * If the current URL contains ?code=..., exchange it for a token.
+ * Clears the code from the URL. Returns the access token or null.
+ */
+export async function handleCallback() {
+  const p    = new URLSearchParams(window.location.search);
+  const code = p.get('code');
+  if (!code) return null;
+
+  if (p.get('state') !== sessionStorage.getItem('pkce_state')) {
+    throw new Error('OAuth state mismatch — possible CSRF');
   }
+  const verifier = sessionStorage.getItem('pkce_verifier');
+  sessionStorage.removeItem('pkce_verifier');
+  sessionStorage.removeItem('pkce_state');
+  history.replaceState(null, '', location.pathname);  // clean the URL
+
+  const res  = await fetch('https://github.com/login/oauth/access_token', {
+    method:  'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      client_id:     CLIENT_ID,
+      code,
+      redirect_uri:  redirectUri(),
+      code_verifier: verifier,
+    }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error_description ?? data.error);
+  return data.access_token;
 }
 ```
 
 **Init flow:**
 
 ```js
-// client/main.js
+// client/js/app.js
 
 async function init() {
-  let token = getToken();
-  if (!token) token = await startDeviceFlow();
+  // 1. Handle the OAuth callback if redirected back from GitHub
+  const callbackToken = await handleCallback();
+  if (callbackToken) {
+    const me = await fetch('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${callbackToken}` },
+    }).then(r => r.json());
+    Config.save({ userid: me.login, github_token: callbackToken, github_repo: `${me.login}/realm` });
+  }
 
-  await ensureFork(getUserid(), token);
+  // 2. Check stored token
+  const cfg = Config.load();
+  if (!cfg?.github_token) {
+    showLogin();   // renders a "Login with GitHub" button that calls startLogin()
+    return;
+  }
+
+  await ensureFork(cfg.userid, cfg.github_token);
   await loadWorldState();
 }
 ```
 
-**All API calls go through a single wrapper** that handles 401 re-auth:
+**All API calls go through a single wrapper** that detects 401 and triggers re-auth:
 
 ```js
-// client/api.js
+// client/js/github.js
 
-export async function githubFetch(path, options = {}) {
-  const token = getToken();
+export class AuthError extends Error {}
+
+async _request(method, path, body) {
   const res = await fetch(`https://api.github.com${path}`, {
-    ...options,
-    headers: {
-      "Authorization":        `Bearer ${token}`,
-      "Accept":               "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      ...options.headers,
-    },
+    method,
+    headers: { ...this._headers(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
   });
-  if (res.status === 401) {
-    // Token expired or revoked — re-auth and retry once
-    await startDeviceFlow();
-    return githubFetch(path, options);
-  }
-  return res;
+  if (res.status === 401) throw new AuthError('Token expired');
+  if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`);
+  return res.json();
 }
 ```
+
+In `app.js`, catch `AuthError` → `Config.clear()` → `startLogin()`.
 
 ---
 
@@ -474,8 +503,9 @@ const log    = await fetch(logUrl).then((r) => r.text());
 
 | Situation | API status | Handling |
 |---|---|---|
-| Token missing | — | Run Device Flow |
-| Token expired/revoked | 401 | Re-run Device Flow, retry |
+| Token missing | — | Run PKCE login flow |
+| Token expired/revoked | 401 | Clear token, re-run PKCE login |
+| OAuth state mismatch | — | Abort and show error (possible CSRF) |
 | Fork doesn't exist | 404 on repo fetch | Create fork, wait for it |
 | Branch already exists | 422 on ref creation | Proceed — file write still works |
 | File already exists on branch | Need SHA | Fetch existing file SHA, include in PUT |
@@ -502,7 +532,7 @@ If the game ever moves to public forks only, `public_repo` suffices. Until then,
 - Replace with a Cloudflare Worker proxy that holds the OAuth token server-side and issues HttpOnly session cookies
 - Or enforce Fine-Grained PATs scoped to the player's specific fork (`contents: write`, `pull_requests: write`)
 
-The token obtained via Device Flow acts on behalf of the user — it can only do what the user's own GitHub account can do. It cannot access other players' private forks.
+PKCE prevents authorization code interception attacks. The `state` parameter prevents CSRF. The token obtained via PKCE acts on behalf of the user — it can only do what the user's own GitHub account can do and cannot access other players' private forks.
 
 ---
 
@@ -510,4 +540,4 @@ The token obtained via Device Flow acts on behalf of the user — it can only do
 
 - **GitHub API** (`api.github.com`): full CORS support; all write calls work from the browser
 - **Raw content** (`raw.githubusercontent.com`): CORS supported for GET; no auth header needed for public repos
-- **OAuth Device Flow endpoints** (`github.com/login/...`): CORS supported only if `Accept: application/json` is sent — without it GitHub returns `application/x-www-form-urlencoded` and the preflight fails
+- **OAuth PKCE endpoints** (`github.com/login/oauth/...`): CORS supported only if `Accept: application/json` is sent — without it GitHub returns `application/x-www-form-urlencoded` and the preflight fails

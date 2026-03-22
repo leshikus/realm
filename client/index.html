@@ -9,22 +9,14 @@
 </head>
 <body>
 
-  <!-- Setup screen (shown until config is saved) -->
-  <div id="setup-screen" class="hidden">
+  <!-- Login screen (shown until OAuth completes) -->
+  <div id="login-screen" class="hidden">
     <div class="setup-box">
-      <h2>Realm — First Run</h2>
-      <p>Enter your GitHub details to connect to your world fork.</p>
-      <label>GitHub username / userid
-        <input id="cfg-userid" type="text" placeholder="leshikus" />
-      </label>
-      <label>Repository (owner/repo)
-        <input id="cfg-repo" type="text" placeholder="leshikus/realm" />
-      </label>
-      <label>GitHub token (needs <code>contents</code> + <code>pull_requests</code> scope)
-        <input id="cfg-token" type="password" placeholder="ghp_..." />
-      </label>
-      <button id="cfg-save">Save & Load World</button>
-      <p class="hint">Config is stored in <code>localStorage</code> — never sent anywhere except GitHub API.</p>
+      <h2>Realm</h2>
+      <p>Connect your GitHub account to access your world fork.</p>
+      <button id="btn-login" class="primary">Login with GitHub</button>
+      <p class="hint">You will be redirected to GitHub to authorise this app, then returned here.</p>
+      <p id="login-error" class="error hidden"></p>
     </div>
   </div>
 
@@ -43,6 +35,7 @@
       <button class="tab-btn" data-tab="orders">Orders</button>
       <button class="tab-btn" data-tab="events">Events</button>
       <button class="tab-btn" data-tab="stats">Statistics</button>
+      <button class="tab-btn" data-tab="setup">Setup</button>
     </nav>
 
     <!-- Map tab -->
@@ -89,6 +82,30 @@
         <div class="chart-box"><canvas id="chart-belief"></canvas></div>
         <div class="chart-box"><canvas id="chart-army"></canvas></div>
         <div class="chart-box"><canvas id="chart-unrest"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Setup tab -->
+    <div id="tab-setup" class="tab hidden">
+      <div class="setup-steps">
+        <div class="setup-step">
+          <h3>Step 1 — Fork the canonical repo</h3>
+          <p>Creates your personal copy of the Realm repository where your world will live.</p>
+          <button id="btn-fork">Fork Realm</button>
+          <p id="fork-status" class="setup-step-status"></p>
+        </div>
+        <div class="setup-step">
+          <h3>Step 2 — Initialize your world</h3>
+          <p>Creates an initial world file on your fork (<code>world/{userid}/turn.json</code>).</p>
+          <button id="btn-init-world" disabled>Initialize World</button>
+          <p id="init-status" class="setup-step-status"></p>
+        </div>
+        <div class="setup-step">
+          <h3>Step 3 — Submit join PR</h3>
+          <p>Opens a pull request from your fork to the canonical repo so the game master can register you.</p>
+          <button id="btn-join-pr" disabled>Submit Join PR</button>
+          <p id="pr-status" class="setup-step-status"></p>
+        </div>
       </div>
     </div>
   </div>
