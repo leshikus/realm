@@ -28,6 +28,23 @@ export class MapView {
     this._armies  = this._indexBy(world.armies  ?? [], 'region_id');
     this._heroes  = this._indexBy(world.heroes  ?? [], 'region_id');
 
+    if (this._regions.length === 0) {
+      this.canvas.width  = 480;
+      this.canvas.height = 120;
+      const ctx = this.ctx;
+      ctx.clearRect(0, 0, 480, 120);
+      ctx.fillStyle = '#2e2e42';
+      ctx.fillRect(0, 0, 480, 120);
+      ctx.fillStyle = '#7878a0';
+      ctx.font = '14px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('No world data found.', 240, 48);
+      ctx.font = '12px system-ui';
+      ctx.fillText('Complete setup or wait for your first turn to resolve.', 240, 72);
+      ctx.textAlign = 'left';
+      return;
+    }
+
     const cols = MapView.COLS;
     const rows = Math.ceil(this._regions.length / cols);
     const w = cols * (MapView.CARD_W + MapView.CARD_PAD) + MapView.CARD_PAD;

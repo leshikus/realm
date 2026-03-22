@@ -2,6 +2,7 @@
  * github.js — GitHub REST API client.
  * Fetches world state JSON from the repo and submits orders as a PR.
  */
+import { dbg } from './debug.js';
 
 /** The upstream repo all player forks are created from. */
 const CANONICAL_REPO = 'dataved/realm';
@@ -41,15 +42,27 @@ export class GitHubClient {
 
   async loadWorld(userid) {
     const base = `world/${userid}`;
+    // Try player's fork first; fall back to canonical repo (world data may live there
+    // before the player has their own fork, or after a CI merge into canonical).
+    const tryJSON = async (path, fallback) => {
+      try { return await this.fetchJSON(path); } catch {}
+      try {
+        const url = `https://raw.githubusercontent.com/${CANONICAL_REPO}/main/${path}`;
+        const res = await fetch(url, { headers: this._headers() });
+        if (res.ok) return res.json();
+      } catch {}
+      return fallback;
+    };
+
     const [heroes, factions, regions, armies, economy, belief, turnObj] =
       await Promise.all([
-        this.fetchJSON(`${base}/heroes.json`).catch(() => []),
-        this.fetchJSON(`${base}/factions.json`).catch(() => []),
-        this.fetchJSON(`${base}/regions.json`).catch(() => []),
-        this.fetchJSON(`${base}/armies.json`).catch(() => []),
-        this.fetchJSON(`${base}/economy.json`).catch(() => ({})),
-        this.fetchJSON(`${base}/belief.json`).catch(() => ({})),
-        this.fetchJSON(`${base}/turn.json`).catch(() => ({ turn: 0 })),
+        tryJSON(`${base}/heroes.json`,   []),
+        tryJSON(`${base}/factions.json`, []),
+        tryJSON(`${base}/regions.json`,  []),
+        tryJSON(`${base}/armies.json`,   []),
+        tryJSON(`${base}/economy.json`,  {}),
+        tryJSON(`${base}/belief.json`,   {}),
+        tryJSON(`${base}/turn.json`,     { turn: 0 }),
       ]);
     return { heroes, factions, regions, armies, economy, belief, turn: turnObj.turn ?? 0 };
   }
@@ -187,11 +200,22 @@ export class GitHubClient {
   }
 
   async _request(method, path, body) {
-    const res = await fetch(`${this.base}${path}`, {
+    const url = `${this.base}${path}`;
+    const t0  = Date.now();
+    const res = await fetch(url, {
       method,
       headers: { ...this._headers(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
+    const ms = Date.now() - t0;
+
+    const remaining = res.headers.get('X-RateLimit-Remaining');
+    const limit     = res.headers.get('X-RateLimit-Limit');
+    const reset     = res.headers.get('X-RateLimit-Reset');
+    if (remaining != null) dbg.setRateLimit({ remaining: +remaining, limit: +limit, reset: +reset });
+
+    dbg.api(method, url, res.status, ms, remaining != null ? +remaining : undefined);
+
     if (res.status === 401) throw new AuthError();
     if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`);
     return res.json();
