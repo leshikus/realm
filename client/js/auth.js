@@ -7,7 +7,7 @@
  *   On login btn:  await startLogin();
  */
 
-const CLIENT_ID = 'YOUR_GITHUB_OAUTH_APP_CLIENT_ID';
+const CLIENT_ID = 'https://leshikus.github.io/realm';
 const SCOPES    = 'repo';
 
 function redirectUri() {
