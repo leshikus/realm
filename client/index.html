@@ -14,24 +14,8 @@ DEBUG
     <div class="setup-box">
       <h2>Conspiracy</h2>
 
-      <!-- Step 1: OAuth app credentials (shown only on first run) -->
-      <div id="oauth-app-setup" class="hidden">
-        <p class="hint">Register an OAuth App at GitHub → Settings → Developer settings → OAuth Apps. Set the callback URL to this page's URL, then paste the credentials below.</p>
-        <label>Client ID
-          <input id="cfg-client-id" type="text" placeholder="Iv1.abc123…" autocomplete="off" />
-        </label>
-        <label>Client Secret
-          <input id="cfg-client-secret" type="password" placeholder="your client secret" autocomplete="off" />
-        </label>
-        <button id="btn-save-oauth-app" class="primary">Save & Continue</button>
-      </div>
-
-      <!-- Step 2: Login (shown once credentials are stored) -->
-      <div id="oauth-login" class="hidden">
-        <button id="btn-login" class="primary">Login with GitHub</button>
-        <p class="hint">Redirects to GitHub for authorisation, then returns here.</p>
-        <button id="btn-reset-oauth-app">Change OAuth App credentials</button>
-      </div>
+      <button id="btn-login" class="primary">Login with GitHub</button>
+      <p class="hint">Redirects to GitHub for authorisation, then returns here.</p>
 
       <div class="login-divider">— or —</div>
 
@@ -43,7 +27,7 @@ DEBUG
         <input id="pat-userid" type="text" placeholder="your-github-username" autocomplete="off" />
       </label>
       <button id="btn-pat">Connect with token</button>
-      <p class="hint">Token needs <code>repo</code> scope. Generated at GitHub → Settings → Developer settings → Personal access tokens.</p>
+      <p class="hint">Token needs <code>public_repo</code> scope. Generated at GitHub → Settings → Developer settings → Personal access tokens.</p>
 
       <p id="login-error" class="error hidden"></p>
     </div>
@@ -126,7 +110,7 @@ DEBUG
         </div>
         <div class="setup-step">
           <h3>Step 2 — Initialize your world</h3>
-          <p>Creates an initial world file on your fork (<code>world/{userid}/turn.json</code>).</p>
+          <p>Creates an initial world file on your fork (<code>{userid}/turn.json</code>).</p>
           <button id="btn-init-world" disabled>Initialize World</button>
           <p id="init-status" class="setup-step-status"></p>
         </div>

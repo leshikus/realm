@@ -4,11 +4,22 @@ Load and save world state JSON files from the repo's /{userid}/ directory.
 
 from __future__ import annotations
 import json
+import os
 from pathlib import Path
 from .models import PlayerWorld, SharedWorld, Economy, BeliefIndex
 
 
-WORLD_ROOT = Path(__file__).resolve().parent.parent / "world"
+def _default_world_root() -> Path:
+    # In CI: CONSPIRACY_WORLD_ROOT is set to $GITHUB_WORKSPACE (root of the
+    # conspiracy repo checkout, where player dirs live at the top level).
+    # Locally: fall back to ../world relative to this package for dev fixtures.
+    env = os.environ.get('CONSPIRACY_WORLD_ROOT')
+    if env:
+        return Path(env)
+    return Path(__file__).resolve().parent.parent.parent / "conspiracy"
+
+
+WORLD_ROOT = _default_world_root()
 
 
 def world_dir(userid: str) -> Path:

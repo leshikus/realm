@@ -458,9 +458,7 @@ const log    = await fetch(logUrl).then((r) => r.text());
 
 | Scope | Why |
 |---|---|
-| `repo` | Read/write private forks; create branches, files, PRs |
-
-If the game ever moves to public forks only, `public_repo` suffices. Until then, `repo` is required.
+| `public_repo` | Read/write public forks; create branches, files, PRs |
 
 ---
 

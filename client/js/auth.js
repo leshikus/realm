@@ -1,29 +1,17 @@
 /**
  * auth.js — GitHub OAuth web flow.
  *
- * CLIENT_ID and CLIENT_SECRET are stored in localStorage by the player on
- * first run. Each player registers their own GitHub OAuth App and enters the
- * credentials once. See docs/oauth.md § Security Notes for the rationale.
+ * CLIENT_ID and CLIENT_SECRET are shared across all players and hardcoded here.
+ * See docs/oauth.md § Security Notes for the rationale.
  *
  * Usage:
  *   startLogin()                          — redirects to GitHub
  *   const token = await handleCallback() — null if not a callback
  */
 
-const SCOPES = 'repo';
-
-export function getOAuthApp() {
-  const raw = localStorage.getItem('conspiracy_oauth_app');
-  return raw ? JSON.parse(raw) : null;
-}
-
-export function saveOAuthApp(clientId, clientSecret) {
-  localStorage.setItem('conspiracy_oauth_app', JSON.stringify({ clientId, clientSecret }));
-}
-
-export function clearOAuthApp() {
-  localStorage.removeItem('conspiracy_oauth_app');
-}
+const CLIENT_ID     = 'YOUR_GITHUB_OAUTH_APP_CLIENT_ID';
+const CLIENT_SECRET = 'YOUR_GITHUB_OAUTH_APP_CLIENT_SECRET';
+const SCOPES        = 'public_repo';
 
 function redirectUri() {
   return window.location.origin + window.location.pathname.replace(/\/$/, '');
@@ -31,11 +19,10 @@ function redirectUri() {
 
 /** Redirect the browser to GitHub's OAuth consent screen. */
 export function startLogin() {
-  const { clientId } = getOAuthApp();
   const state = crypto.randomUUID();
   sessionStorage.setItem('oauth_state', state);
   const q = new URLSearchParams({
-    client_id:    clientId,
+    client_id:    CLIENT_ID,
     redirect_uri: redirectUri(),
     scope:        SCOPES,
     state,
@@ -69,11 +56,10 @@ export async function handleCallback() {
   sessionStorage.removeItem('oauth_state');
   history.replaceState(null, '', location.pathname);
 
-  const { clientId, clientSecret } = getOAuthApp();
   const res = await fetch('https://github.com/login/oauth/access_token', {
     method:  'POST',
     headers: { Accept: 'application/json' },
-    body:    new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri() }),
+    body:    new URLSearchParams({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, code, redirect_uri: redirectUri() }),
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error_description ?? data.error);

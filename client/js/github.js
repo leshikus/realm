@@ -41,7 +41,7 @@ export class GitHubClient {
   // ── World state loading ─────────────────────────────────────────────
 
   async loadWorld(userid) {
-    const base = `world/${userid}`;
+    const base = `${userid}`;
     // Try player's fork first; fall back to canonical repo (world data may live there
     // before the player has their own fork, or after a CI merge into canonical).
     const tryJSON = async (path, fallback) => {
@@ -68,7 +68,7 @@ export class GitHubClient {
   }
 
   async loadEventLog(userid) {
-    const text = await this.fetchText(`world/${userid}/history/events.log`);
+    const text = await this.fetchText(`${userid}/history/events.log`);
     if (!text) return [];
     return text.split('\n').map(l => l.trim()).filter(Boolean).reverse();
   }
@@ -77,7 +77,7 @@ export class GitHubClient {
   async loadStats(userid) {
     // List files in world/{userid}/history/ via GitHub Trees API
     const res = await this._get(`/repos/${this.repo}/git/trees/main?recursive=1`);
-    const prefix = `world/${userid}/history/stats_`;
+    const prefix = `${userid}/history/stats_`;
     const files = (res.tree ?? [])
       .filter(f => f.path.startsWith(prefix) && f.path.endsWith('.json'))
       .map(f => f.path)
@@ -116,7 +116,7 @@ export class GitHubClient {
    */
   async initWorldBranch(userid) {
     const branch = `join/${userid}`;
-    const path   = `world/${userid}/turn.json`;
+    const path   = `${userid}/turn.json`;
 
     // Get HEAD of main on the fork
     const ref = await this._get(`/repos/${userid}/conspiracy/git/ref/heads/main`);
@@ -159,7 +159,7 @@ export class GitHubClient {
    */
   async submitOrders(userid, turn, ordersObj) {
     const branch  = `orders/turn-${String(turn).padStart(4, '0')}-${userid}`;
-    const path    = `world/${userid}/orders/turn.json`;
+    const path    = `${userid}/orders/turn.json`;
     const content = JSON.stringify(ordersObj, null, 2);
 
     // 1. Get main SHA

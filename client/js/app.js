@@ -3,7 +3,7 @@
  * Wires together config, GitHub client, and all UI panels.
  */
 import { Config }       from './config.js';
-import { startLogin, handleCallback, getOAuthApp, saveOAuthApp, clearOAuthApp } from './auth.js';
+import { startLogin, handleCallback } from './auth.js';
 import { GitHubClient, AuthError } from './github.js';
 import { dbg, initDebugPanel } from './debug.js';
 import { MapView }      from './mapview.js';
@@ -64,34 +64,6 @@ function showLogin(errorMsg) {
     errEl.textContent = errorMsg;
     errEl.classList.remove('hidden');
   }
-
-  const oauthApp = getOAuthApp();
-  if (oauthApp) {
-    document.getElementById('oauth-login').classList.remove('hidden');
-  } else {
-    document.getElementById('oauth-app-setup').classList.remove('hidden');
-  }
-
-  document.getElementById('btn-save-oauth-app').addEventListener('click', () => {
-    const clientId     = document.getElementById('cfg-client-id').value.trim();
-    const clientSecret = document.getElementById('cfg-client-secret').value.trim();
-    const errEl        = document.getElementById('login-error');
-    if (!clientId || !clientSecret) {
-      errEl.textContent = 'Both Client ID and Client Secret are required.';
-      errEl.classList.remove('hidden');
-      return;
-    }
-    saveOAuthApp(clientId, clientSecret);
-    document.getElementById('oauth-app-setup').classList.add('hidden');
-    document.getElementById('oauth-login').classList.remove('hidden');
-    errEl.classList.add('hidden');
-  });
-
-  document.getElementById('btn-reset-oauth-app').addEventListener('click', () => {
-    clearOAuthApp();
-    document.getElementById('oauth-login').classList.add('hidden');
-    document.getElementById('oauth-app-setup').classList.remove('hidden');
-  });
 
   document.getElementById('btn-login').addEventListener('click', () => {
     dbg.info('Starting OAuth login');

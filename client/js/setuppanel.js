@@ -45,7 +45,7 @@ export class SetupPanel {
     this._set(statusEl, 'Creating initial world file…');
     try {
       this.branch = await this.gh.initWorldBranch(this.userid);
-      this._set(statusEl, `Branch "${this.branch}" created with world/${this.userid}/turn.json.`, 'ok');
+      this._set(statusEl, `Branch "${this.branch}" created with ${this.userid}/turn.json.`, 'ok');
       nextBtn.disabled = false;
     } catch (err) {
       this._set(statusEl, `Error: ${err.message}`, 'error');
