@@ -9,8 +9,8 @@
  *   const token = await handleCallback() — null if not a callback
  */
 
-const CLIENT_ID     = 'YOUR_GITHUB_OAUTH_APP_CLIENT_ID';
-const CLIENT_SECRET = 'YOUR_GITHUB_OAUTH_APP_CLIENT_SECRET';
+const CLIENT_ID     = 'Ov23li3TQuJMdTulO4yd';
+const CLIENT_SECRET = 'ab1271a3e214f9cdbae3c340b2588efd3ff86369';
 const SCOPES        = 'public_repo';
 
 function redirectUri() {
