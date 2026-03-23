@@ -154,36 +154,48 @@ export class GitHubClient {
   // ── Order submission ────────────────────────────────────────────────
 
   /**
-   * Create a branch, commit the orders file, and open a PR.
+   * Commit orders to a branch on the player's fork, then open a PR
+   * from that branch to the canonical repo's main.
    * Returns the PR HTML URL.
    */
   async submitOrders(userid, turn, ordersObj) {
-    const branch  = `orders/turn-${String(turn).padStart(4, '0')}-${userid}`;
+    const branch  = `orders/turn-${String(turn).padStart(4, '0')}`;
     const path    = `${userid}/orders/turn.json`;
     const content = JSON.stringify(ordersObj, null, 2);
 
-    // 1. Get main SHA
+    // 1. Get HEAD of main on the player's fork
     const ref = await this._get(`/repos/${this.repo}/git/ref/heads/main`);
     const sha = ref.object.sha;
 
-    // 2. Create branch
-    await this._post(`/repos/${this.repo}/git/refs`, {
-      ref: `refs/heads/${branch}`, sha,
-    });
+    // 2. Create orders branch on the fork (ignore 422 if it already exists)
+    try {
+      await this._post(`/repos/${this.repo}/git/refs`, {
+        ref: `refs/heads/${branch}`, sha,
+      });
+    } catch (err) {
+      if (!err.message.includes('422')) throw err;
+    }
 
-    // 3. Commit file
+    // 3. Commit orders file to the branch (fetch existing SHA if present)
+    let existingSha;
+    try {
+      const existing = await this._get(`/repos/${this.repo}/contents/${path}?ref=${branch}`);
+      existingSha = existing.sha;
+    } catch {}
+
     await this._put(`/repos/${this.repo}/contents/${path}`, {
       message: `Turn ${turn} orders`,
       content: btoa(unescape(encodeURIComponent(content))),
       branch,
+      ...(existingSha ? { sha: existingSha } : {}),
     });
 
-    // 4. Open PR
-    const pr = await this._post(`/repos/${this.repo}/pulls`, {
-      title: `Turn ${turn} orders`,
-      head:  branch,
+    // 4. Open PR from fork branch to canonical repo main
+    const pr = await this._post(`/repos/${CANONICAL_REPO}/pulls`, {
+      title: `Turn ${turn} orders — ${userid}`,
+      head:  `${userid}:${branch}`,
       base:  'main',
-      body:  `Automated turn ${turn} order submission.`,
+      body:  `Turn ${turn} order submission by ${userid}.`,
     });
 
     return pr.html_url;

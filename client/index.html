@@ -8,27 +8,18 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-DEBUG
   <!-- Login screen (shown until auth completes) -->
   <div id="login-screen" class="hidden">
     <div class="setup-box">
       <h2>Conspiracy</h2>
-
-      <button id="btn-login" class="primary">Login with GitHub</button>
-      <p class="hint">Redirects to GitHub for authorisation, then returns here.</p>
-
-      <div class="login-divider">— or —</div>
-
-      <!-- PAT fallback -->
       <label>Personal Access Token
         <input id="pat-input" type="password" placeholder="ghp_…" autocomplete="off" />
       </label>
       <label>GitHub username
         <input id="pat-userid" type="text" placeholder="your-github-username" autocomplete="off" />
       </label>
-      <button id="btn-pat">Connect with token</button>
-      <p class="hint">Token needs <code>public_repo</code> scope. Generated at GitHub → Settings → Developer settings → Personal access tokens.</p>
-
+      <button id="btn-pat" class="primary">Connect</button>
+      <p class="hint">Token needs <code>repo</code> scope. Generate at GitHub → Settings → Developer settings → Personal access tokens.</p>
       <p id="login-error" class="error hidden"></p>
     </div>
   </div>

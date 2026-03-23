@@ -3,7 +3,6 @@
  * Wires together config, GitHub client, and all UI panels.
  */
 import { Config }       from './config.js';
-import { startLogin, handleCallback } from './auth.js';
 import { GitHubClient, AuthError } from './github.js';
 import { dbg, initDebugPanel } from './debug.js';
 import { MapView }      from './mapview.js';
@@ -18,26 +17,9 @@ let world  = null;
 let cfg    = null;
 
 // ── Boot ───────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
   dbg.info('DOMContentLoaded');
 
-  // 1. Handle OAuth callback (present when GitHub redirects back with ?code=...)
-  let callbackError = null;
-  try {
-    const token = await handleCallback();
-    if (token) {
-      const me = await fetch('https://api.github.com/user', {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
-      }).then(r => r.json());
-      Config.save({ userid: me.login, github_token: token, github_repo: `${me.login}/conspiracy` });
-      dbg.info('OAuth callback: token saved', { userid: me.login });
-    }
-  } catch (err) {
-    callbackError = err.message;
-    dbg.error('OAuth callback failed', { message: err.message });
-  }
-
-  // 2. Check stored config
   cfg = Config.load();
   dbg.info('Config loaded', {
     userid:   cfg?.userid ?? null,
@@ -47,7 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (!cfg?.github_token) {
     dbg.info('No token — showing login screen');
-    showLogin(callbackError);
+    showLogin();
     return;
   }
 
@@ -65,11 +47,6 @@ function showLogin(errorMsg) {
     errEl.classList.remove('hidden');
   }
 
-  document.getElementById('btn-login').addEventListener('click', () => {
-    dbg.info('Starting OAuth login');
-    startLogin();
-  });
-
   document.getElementById('btn-pat').addEventListener('click', async () => {
     const token  = document.getElementById('pat-input').value.trim();
     const userid = document.getElementById('pat-userid').value.trim();
@@ -81,15 +58,18 @@ function showLogin(errorMsg) {
       return;
     }
 
-    // Verify token by fetching the authenticated user
+    errEl.classList.add('hidden');
     try {
       const me = await fetch('https://api.github.com/user', {
         headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
       }).then(r => r.ok ? r.json() : Promise.reject(new Error('Invalid token')));
 
-      Config.save({ userid: me.login ?? userid, github_token: token, github_repo: `${me.login ?? userid}/conspiracy` });
+      cfg = { userid: me.login ?? userid, github_token: token, github_repo: `${me.login ?? userid}/conspiracy` };
+      Config.save(cfg);
+      dbg.info('PAT login successful', { userid: cfg.userid });
       initApp();
     } catch (err) {
+      dbg.error('PAT login failed', { message: err.message });
       errEl.textContent = `Token error: ${err.message}`;
       errEl.classList.remove('hidden');
     }
@@ -100,7 +80,8 @@ function showLogin(errorMsg) {
 function handleAuthError() {
   Config.clear();
   cfg = null;
-  startLogin();
+  dbg.warn('Token invalid — returning to login');
+  showLogin('Your token has expired or been revoked. Please enter a new one.');
 }
 
 // ── Main app ────────────────────────────────────────────────────────────────
@@ -181,37 +162,30 @@ function initApp() {
       dbg.info('Loading world…', { userid: cfg.userid });
       world = await gh.loadWorld(cfg.userid);
       dbg.info('World loaded', {
-        turn:    world.turn,
-        regions: world.regions?.length ?? 0,
-        heroes:  world.heroes?.length  ?? 0,
+        turn:     world.turn,
+        regions:  world.regions?.length ?? 0,
+        heroes:   world.heroes?.length  ?? 0,
         factions: world.factions?.length ?? 0,
       });
       dbg.setWorld(world);
 
-      // Header
       document.getElementById('header-turn').textContent  = `Turn ${world.turn}`;
-      document.getElementById('header-trust').textContent =
-        `Trust: ${world.economy.trust ?? 0}`;
+      document.getElementById('header-trust').textContent = `Trust: ${world.economy.trust ?? 0}`;
 
-      // Map
       mapView.render(world);
-
-      // Orders context
       ordersPanel.setContext(gh, cfg.userid, world.turn);
 
-      // Events
       const events = await gh.loadEventLog(cfg.userid);
       dbg.info('Event log loaded', { entries: events.length });
       eventViewer.load(events);
 
-      // Stats
       const snapshots = await gh.loadStats(cfg.userid);
       dbg.info('Stats snapshots loaded', { count: snapshots.length });
       statsPanel.render(snapshots);
 
     } catch (err) {
       if (err instanceof AuthError) {
-        dbg.error('Auth error during world load — re-authenticating');
+        dbg.error('Auth error during world load');
         handleAuthError();
         return;
       }
