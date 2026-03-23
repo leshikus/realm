@@ -14,13 +14,23 @@ DEBUG
     <div class="setup-box">
       <h2>Conspiracy</h2>
 
-      <!-- Device Flow section -->
-      <button id="btn-login" class="primary">Login with GitHub</button>
-      <div id="device-flow-prompt" class="hidden">
-        <p class="hint">Open <a id="device-uri" href="#" target="_blank">github.com/login/device</a> and enter:</p>
-        <div id="device-code-display"></div>
-        <button id="btn-copy-code">Copy code</button>
-        <p id="device-status" class="hint"></p>
+      <!-- Step 1: OAuth app credentials (shown only on first run) -->
+      <div id="oauth-app-setup" class="hidden">
+        <p class="hint">Register an OAuth App at GitHub → Settings → Developer settings → OAuth Apps. Set the callback URL to this page's URL, then paste the credentials below.</p>
+        <label>Client ID
+          <input id="cfg-client-id" type="text" placeholder="Iv1.abc123…" autocomplete="off" />
+        </label>
+        <label>Client Secret
+          <input id="cfg-client-secret" type="password" placeholder="your client secret" autocomplete="off" />
+        </label>
+        <button id="btn-save-oauth-app" class="primary">Save & Continue</button>
+      </div>
+
+      <!-- Step 2: Login (shown once credentials are stored) -->
+      <div id="oauth-login" class="hidden">
+        <button id="btn-login" class="primary">Login with GitHub</button>
+        <p class="hint">Redirects to GitHub for authorisation, then returns here.</p>
+        <button id="btn-reset-oauth-app">Change OAuth App credentials</button>
       </div>
 
       <div class="login-divider">— or —</div>

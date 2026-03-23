@@ -20,7 +20,7 @@ Player visits https://{userid}.github.io/conspiracy
     │
     ▼
 [1] Auth check — is a token in localStorage?
-    │   No → Device Flow → show user_code → user approves on GitHub → poll → store in localStorage
+    │   No → OAuth web flow → redirect to GitHub → callback with ?code= → exchange for token → store in localStorage
     │   Yes → use it (clear + re-auth on 401)
     │
     ▼
@@ -466,12 +466,28 @@ If the game ever moves to public forks only, `public_repo` suffices. Until then,
 
 ## Security Notes
 
-`localStorage` is readable by any JS on the page. Acceptable for private beta. For public release:
+### `client_secret` in frontend code
 
-- Replace with a Cloudflare Worker proxy that holds the OAuth token server-side and issues HttpOnly session cookies
-- Or enforce Fine-Grained PATs scoped to the player's specific fork (`contents: write`, `pull_requests: write`)
+`client_secret` is embedded in `auth.js` (a public file). This is intentional and acceptable for this game:
 
-PKCE prevents authorization code interception attacks. The `state` parameter prevents CSRF. The token obtained via PKCE acts on behalf of the user — it can only do what the user's own GitHub account can do and cannot access other players' private forks.
+- **The secret only identifies the OAuth app, not any player.** It does not grant access to anyone's GitHub account or world data.
+- **Every player acts under their own GitHub account.** The client is a helper that constructs API calls on behalf of the player, using the player's own OAuth token. All writes (branches, files, PRs) are scoped to what that player's account can do.
+- **A player could publish their own OAuth token, their PAT, or their GitHub password and the consequence would be the same** — their own account is exposed. The game cannot prevent this and does not need to. There is no shared secret worth protecting.
+- **The worst-case exposure of `client_secret`** is that someone creates a fake "Login with Conspiracy" button using the app's identity. In this game that has no meaningful impact — there is no sensitive user data, no payment, and no action the impersonating app could take that the player's own account couldn't already take.
+
+The standard advice to keep `client_secret` server-side applies to apps where the secret protects something — a shared database, payment flows, admin actions. It does not apply here.
+
+### Cross-origin isolation
+
+`localStorage` is only accessible to same-origin JS (`https://leshikus.github.io`). Other websites cannot read it. The browser's same-origin policy enforces this without any additional measures.
+
+### `state` parameter
+
+The OAuth `state` parameter stored in `sessionStorage` prevents CSRF — another origin cannot initiate a login flow that completes in the player's session.
+
+### Token scope
+
+The OAuth token acts on behalf of the player and can only do what the player's own GitHub account can do. It cannot access other players' private forks.
 
 ---
 
@@ -479,4 +495,4 @@ PKCE prevents authorization code interception attacks. The `state` parameter pre
 
 - **GitHub API** (`api.github.com`): full CORS support; all write calls work from the browser
 - **Raw content** (`raw.githubusercontent.com`): CORS supported for GET; no auth header needed for public repos
-- **OAuth Device Flow endpoints** (`github.com/login/...`): Send body as `application/x-www-form-urlencoded` (`URLSearchParams`), **not** JSON. `Content-Type: application/json` triggers a CORS preflight that GitHub's device endpoints do not handle — the browser blocks the request. Keep `Accept: application/json` to get a JSON response; `Accept` is a CORS-safelisted header and does not trigger a preflight.
+- **OAuth token exchange** (`github.com/login/oauth/access_token`): send body as `application/x-www-form-urlencoded` (`URLSearchParams`) to avoid triggering a CORS preflight. Keep `Accept: application/json` to receive a JSON response.

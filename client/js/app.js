@@ -3,7 +3,7 @@
  * Wires together config, GitHub client, and all UI panels.
  */
 import { Config }       from './config.js';
-import { startDeviceFlow, pollForToken } from './auth.js';
+import { startLogin, handleCallback, getOAuthApp, saveOAuthApp, clearOAuthApp } from './auth.js';
 import { GitHubClient, AuthError } from './github.js';
 import { dbg, initDebugPanel } from './debug.js';
 import { MapView }      from './mapview.js';
@@ -21,6 +21,23 @@ let cfg    = null;
 document.addEventListener('DOMContentLoaded', async () => {
   dbg.info('DOMContentLoaded');
 
+  // 1. Handle OAuth callback (present when GitHub redirects back with ?code=...)
+  let callbackError = null;
+  try {
+    const token = await handleCallback();
+    if (token) {
+      const me = await fetch('https://api.github.com/user', {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
+      }).then(r => r.json());
+      Config.save({ userid: me.login, github_token: token, github_repo: `${me.login}/conspiracy` });
+      dbg.info('OAuth callback: token saved', { userid: me.login });
+    }
+  } catch (err) {
+    callbackError = err.message;
+    dbg.error('OAuth callback failed', { message: err.message });
+  }
+
+  // 2. Check stored config
   cfg = Config.load();
   dbg.info('Config loaded', {
     userid:   cfg?.userid ?? null,
@@ -30,7 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (!cfg?.github_token) {
     dbg.info('No token — showing login screen');
-    showLogin();
+    showLogin(callbackError);
     return;
   }
 
@@ -48,50 +65,37 @@ function showLogin(errorMsg) {
     errEl.classList.remove('hidden');
   }
 
-  document.getElementById('btn-login').addEventListener('click', async () => {
-    const errEl      = document.getElementById('login-error');
-    const promptEl   = document.getElementById('device-flow-prompt');
-    const codeEl     = document.getElementById('device-code-display');
-    const uriEl      = document.getElementById('device-uri');
-    const statusEl   = document.getElementById('device-status');
-    const copyBtn    = document.getElementById('btn-copy-code');
-    const loginBtn   = document.getElementById('btn-login');
+  const oauthApp = getOAuthApp();
+  if (oauthApp) {
+    document.getElementById('oauth-login').classList.remove('hidden');
+  } else {
+    document.getElementById('oauth-app-setup').classList.remove('hidden');
+  }
 
-    loginBtn.disabled = true;
-    errEl.classList.add('hidden');
-
-    try {
-      const { device_code, user_code, verification_uri, interval } = await startDeviceFlow();
-      dbg.info('Device flow started', { user_code, verification_uri });
-
-      uriEl.href        = verification_uri;
-      uriEl.textContent = verification_uri.replace('https://', '');
-      codeEl.textContent = user_code;
-      promptEl.classList.remove('hidden');
-      statusEl.textContent = 'Waiting for authorisation…';
-
-      copyBtn.onclick = () => navigator.clipboard.writeText(user_code).catch(() => {});
-
-      const token = await pollForToken(device_code, interval, status => {
-        statusEl.textContent = status === 'slow_down' ? 'Polling too fast — slowing down…' : 'Waiting…';
-      });
-      dbg.info('Device flow: token received');
-
-      const me = await fetch('https://api.github.com/user', {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
-      }).then(r => r.json());
-
-      Config.save({ userid: me.login, github_token: token, github_repo: `${me.login}/conspiracy` });
-      cfg = Config.load();
-      document.getElementById('login-screen').classList.add('hidden');
-      initApp();
-    } catch (err) {
-      dbg.error('Device flow failed', { message: err.message });
-      errEl.textContent = err.message;
+  document.getElementById('btn-save-oauth-app').addEventListener('click', () => {
+    const clientId     = document.getElementById('cfg-client-id').value.trim();
+    const clientSecret = document.getElementById('cfg-client-secret').value.trim();
+    const errEl        = document.getElementById('login-error');
+    if (!clientId || !clientSecret) {
+      errEl.textContent = 'Both Client ID and Client Secret are required.';
       errEl.classList.remove('hidden');
-      promptEl.classList.add('hidden');
-      loginBtn.disabled = false;
+      return;
     }
+    saveOAuthApp(clientId, clientSecret);
+    document.getElementById('oauth-app-setup').classList.add('hidden');
+    document.getElementById('oauth-login').classList.remove('hidden');
+    errEl.classList.add('hidden');
+  });
+
+  document.getElementById('btn-reset-oauth-app').addEventListener('click', () => {
+    clearOAuthApp();
+    document.getElementById('oauth-login').classList.add('hidden');
+    document.getElementById('oauth-app-setup').classList.remove('hidden');
+  });
+
+  document.getElementById('btn-login').addEventListener('click', () => {
+    dbg.info('Starting OAuth login');
+    startLogin();
   });
 
   document.getElementById('btn-pat').addEventListener('click', async () => {
@@ -124,7 +128,7 @@ function showLogin(errorMsg) {
 function handleAuthError() {
   Config.clear();
   cfg = null;
-  showLogin('Session expired — please log in again.');
+  startLogin();
 }
 
 // ── Main app ────────────────────────────────────────────────────────────────
