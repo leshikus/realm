@@ -51,10 +51,11 @@ export class OrdersPanel {
     submitBtn.addEventListener('click', () => this._submit(submitBtn));
   }
 
-  setContext(gh, userid, turn) {
-    this.gh     = gh;
-    this.userid = userid;
-    this.turn   = turn;
+  setContext(gh, userid, turn, { onSubmit } = {}) {
+    this.gh       = gh;
+    this.userid   = userid;
+    this.turn     = turn;
+    this.onSubmit = onSubmit ?? null;
   }
 
   _addOrder() {
@@ -92,6 +93,7 @@ export class OrdersPanel {
       const url = await this.gh.submitOrders(this.userid, this.turn, payload);
       this._status(`PR opened: ${url}`);
       this._clear();
+      this.onSubmit?.();
     } catch (err) {
       this._status(`Error: ${err.message}`, 'error');
     } finally {

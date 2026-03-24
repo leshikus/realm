@@ -239,6 +239,36 @@ textarea { resize: vertical; }
 .setup-step-status.info   { color: var(--muted); }
 .setup-step-status a      { color: var(--accent); }
 
+/* ── Music player ────────────────────────────────────────────────────── */
+#music-player {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#music-title {
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+#music-player button {
+  padding: 4px 8px;
+  font-size: 11px;
+  min-width: unset;
+}
+
+#music-volume {
+  width: 72px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 /* ── Buttons ─────────────────────────────────────────────────────────── */
 /* ── Debug panel ─────────────────────────────────────────────────────── */
 #debug-panel {

@@ -15,8 +15,11 @@
       <label>Personal Access Token
         <input id="pat-input" type="password" placeholder="ghp_…" autocomplete="off" />
       </label>
-<button id="btn-pat" class="primary">Connect</button>
-      <p class="hint">Token needs <code>repo</code> scope. Generate at GitHub → Settings → Developer settings → Personal access tokens.</p>
+      <label>Mubert API Key <span style="color:var(--muted);font-weight:400">(optional — enables AI music)</span>
+        <input id="mubert-key-input" type="password" placeholder="mubert_…" autocomplete="off" />
+      </label>
+      <button id="btn-pat" class="primary">Connect</button>
+      <p class="hint">GitHub token needs <code>repo</code> scope. Generate at GitHub → Settings → Developer settings → Personal access tokens.</p>
       <p id="login-error" class="error hidden"></p>
     </div>
   </div>
@@ -27,6 +30,12 @@
       <span id="header-title">CONSPIRACY</span>
       <span id="header-turn"></span>
       <span id="header-trust"></span>
+      <div id="music-player">
+        <span id="music-title">♪ –</span>
+        <button id="btn-music-play" title="Play / Pause">▶</button>
+        <button id="btn-music-skip" title="Next track">▶▶</button>
+        <input id="music-volume" type="range" min="0" max="1" step="0.05" value="0.4" title="Volume" />
+      </div>
       <button id="btn-reload">↻ Reload</button>
       <button id="btn-config">⚙ Config</button>
       <button id="btn-debug">DBG</button>

@@ -24,7 +24,7 @@ export class GitHubClient {
   /** Fetch a JSON file from the repo's default branch. */
   async fetchJSON(path) {
     const url = `https://raw.githubusercontent.com/${this.repo}/main/${path}`;
-    const res = await fetch(url, { headers: this._headers() });
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`fetchJSON ${path}: ${res.status}`);
     return res.json();
   }
@@ -32,7 +32,7 @@ export class GitHubClient {
   /** Fetch a text file (e.g. events.log). Returns string or null. */
   async fetchText(path) {
     const url = `https://raw.githubusercontent.com/${this.repo}/main/${path}`;
-    const res = await fetch(url, { headers: this._headers() });
+    const res = await fetch(url);
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`fetchText ${path}: ${res.status}`);
     return res.text();
@@ -48,7 +48,7 @@ export class GitHubClient {
       try { return await this.fetchJSON(path); } catch {}
       try {
         const url = `https://raw.githubusercontent.com/${CANONICAL_REPO}/main/${path}`;
-        const res = await fetch(url, { headers: this._headers() });
+        const res = await fetch(url);
         if (res.ok) return res.json();
       } catch {}
       return fallback;

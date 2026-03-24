@@ -4,6 +4,7 @@
  */
 import { Config }       from './config.js';
 import { GitHubClient, AuthError } from './github.js';
+import { MusicPlayer }  from './musicplayer.js';
 import { dbg, initDebugPanel } from './debug.js';
 import { MapView }      from './mapview.js';
 import { EventViewer }  from './eventviewer.js';
@@ -15,6 +16,7 @@ import { SetupPanel }   from './setuppanel.js';
 let gh     = null;
 let world  = null;
 let cfg    = null;
+let music  = null;
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -48,8 +50,9 @@ function showLogin(errorMsg) {
   }
 
   document.getElementById('btn-pat').addEventListener('click', async () => {
-    const token = document.getElementById('pat-input').value.trim();
-    const errEl = document.getElementById('login-error');
+    const token      = document.getElementById('pat-input').value.trim();
+    const mubertKey  = document.getElementById('mubert-key-input').value.trim();
+    const errEl      = document.getElementById('login-error');
 
     if (!token) {
       errEl.textContent = 'Enter a Personal Access Token.';
@@ -63,7 +66,7 @@ function showLogin(errorMsg) {
         headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
       }).then(r => r.ok ? r.json() : Promise.reject(new Error('Invalid token')));
 
-      cfg = { userid: me.login, github_token: token, github_repo: `${me.login}/conspiracy` };
+      cfg = { userid: me.login, github_token: token, github_repo: `${me.login}/conspiracy`, ...(mubertKey ? { mubert_api_key: mubertKey } : {}) };
       Config.save(cfg);
       dbg.info('PAT login successful', { userid: cfg.userid });
       initApp();
@@ -93,6 +96,14 @@ function initApp() {
   dbg.info('App initialised', { userid: cfg.userid, repo: cfg.github_repo });
 
   gh = new GitHubClient({ token: cfg.github_token, repo: cfg.github_repo });
+
+  music = new MusicPlayer({
+    playBtn:      document.getElementById('btn-music-play'),
+    skipBtn:      document.getElementById('btn-music-skip'),
+    titleEl:      document.getElementById('music-title'),
+    volumeEl:     document.getElementById('music-volume'),
+    mubertApiKey: cfg.mubert_api_key ?? null,
+  });
 
   // Tab switching
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -167,12 +178,13 @@ function initApp() {
         factions: world.factions?.length ?? 0,
       });
       dbg.setWorld(world);
+      music.update(world);
 
       document.getElementById('header-turn').textContent  = `Turn ${world.turn}`;
       document.getElementById('header-trust').textContent = `Trust: ${world.economy.trust ?? 0}`;
 
       mapView.render(world);
-      ordersPanel.setContext(gh, cfg.userid, world.turn);
+      ordersPanel.setContext(gh, cfg.userid, world.turn, { onSubmit: () => music.triggerResolution() });
 
       const events = await gh.loadEventLog(cfg.userid);
       dbg.info('Event log loaded', { entries: events.length });
