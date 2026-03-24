@@ -92,7 +92,9 @@ function initApp() {
   document.getElementById('app').classList.remove('hidden');
 
   const debugPanel = initDebugPanel(() => cfg);
-  document.getElementById('btn-debug').addEventListener('click', () => debugPanel.toggle());
+  const btnDebug = document.getElementById('btn-debug');
+  if (cfg.debug) btnDebug.classList.remove('hidden');
+  btnDebug.addEventListener('click', () => debugPanel.toggle());
   dbg.info('App initialised', { userid: cfg.userid, repo: cfg.github_repo });
 
   gh = new GitHubClient({ token: cfg.github_token, repo: cfg.github_repo });

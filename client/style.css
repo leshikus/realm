@@ -125,23 +125,22 @@ nav {
 .tab.active { display: flex; flex-direction: column; }
 
 /* ── Map ─────────────────────────────────────────────────────────────── */
-#tab-map { flex-direction: row; gap: 16px; align-items: flex-start; }
+#tab-map { flex-direction: row; gap: 0; align-items: stretch; padding: 0; overflow: hidden; }
 
 #map-canvas {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  cursor: pointer;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  display: block;
+  cursor: default;
 }
 
 .detail-panel {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border-left: 1px solid var(--border);
   padding: 16px;
-  min-width: 220px;
-  max-width: 260px;
+  width: 240px;
+  flex-shrink: 0;
+  overflow-y: auto;
 }
 
 .detail-panel h3 { color: var(--accent); margin-bottom: 10px; }
