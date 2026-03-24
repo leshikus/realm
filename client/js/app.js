@@ -48,12 +48,11 @@ function showLogin(errorMsg) {
   }
 
   document.getElementById('btn-pat').addEventListener('click', async () => {
-    const token  = document.getElementById('pat-input').value.trim();
-    const userid = document.getElementById('pat-userid').value.trim();
-    const errEl  = document.getElementById('login-error');
+    const token = document.getElementById('pat-input').value.trim();
+    const errEl = document.getElementById('login-error');
 
-    if (!token || !userid) {
-      errEl.textContent = 'Enter both a token and your GitHub username.';
+    if (!token) {
+      errEl.textContent = 'Enter a Personal Access Token.';
       errEl.classList.remove('hidden');
       return;
     }
@@ -64,7 +63,7 @@ function showLogin(errorMsg) {
         headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
       }).then(r => r.ok ? r.json() : Promise.reject(new Error('Invalid token')));
 
-      cfg = { userid: me.login ?? userid, github_token: token, github_repo: `${me.login ?? userid}/conspiracy` };
+      cfg = { userid: me.login, github_token: token, github_repo: `${me.login}/conspiracy` };
       Config.save(cfg);
       dbg.info('PAT login successful', { userid: cfg.userid });
       initApp();
