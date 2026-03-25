@@ -206,6 +206,27 @@ nav {
 .tab.active { display: flex; flex-direction: column; }
 
 /* ── Map ─────────────────────────────────────────────────────────────── */
+#map-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.map-view-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 3px;
+}
+
+.map-view-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 #tab-map {
   position: relative;
   padding: 0;

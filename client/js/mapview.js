@@ -275,6 +275,29 @@ function pointInPoly(px, py, pts) {
 
 // ── MapView ──────────────────────────────────────────────────────────────────
 
+// ── View-mode colour helpers ──────────────────────────────────────────────────
+
+const VIEWS = {
+  political:  { label: 'Political',  legend: null },
+  population: { label: 'Population', legend: [['Low','#1a3a5c'],['High','#00d4ff']] },
+  unrest:     { label: 'Unrest',     legend: [['Low','#27ae60'],['Mid','#e67e22'],['High','#c0392b']] },
+  prosperity: { label: 'Prosperity', legend: [['Low','#c0392b'],['Mid','#e67e22'],['High','#27ae60']] },
+};
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function heatColor(value, lo, hi, fromHex, toHex) {
+  const t   = Math.max(0, Math.min(1, (value - lo) / (hi - lo)));
+  const fr  = parseInt(fromHex.slice(1,3),16), fg = parseInt(fromHex.slice(3,5),16), fb = parseInt(fromHex.slice(5,7),16);
+  const tr  = parseInt(toHex.slice(1,3),16),   tg = parseInt(toHex.slice(3,5),16),   tb = parseInt(toHex.slice(5,7),16);
+  return `rgb(${Math.round(lerp(fr,tr,t))},${Math.round(lerp(fg,tg,t))},${Math.round(lerp(fb,tb,t))})`;
+}
+
+function threeStopColor(value, lo, mid, hi, colLo, colMid, colHi) {
+  if (value <= mid) return heatColor(value, lo, mid, colLo, colMid);
+  return heatColor(value, mid, hi, colMid, colHi);
+}
+
 export class MapView {
   constructor(canvas, onSelect) {
     this.canvas   = canvas;
@@ -286,6 +309,7 @@ export class MapView {
     this._allGeo   = [];  // { key, pts }
     this._selected = null;
     this._hovered  = null;
+    this._view     = 'political';
 
     canvas.addEventListener('click',      e => this._onClick(e));
     canvas.addEventListener('mousemove',  e => this._onHover(e));
@@ -303,6 +327,12 @@ export class MapView {
 
   deselect() {
     this._selected = null;
+    this._draw();
+  }
+
+  setView(mode) {
+    if (!VIEWS[mode]) return;
+    this._view = mode;
     this._draw();
   }
 
@@ -352,8 +382,7 @@ export class MapView {
 
       let fill = COL_LAND_DEF;
       if (ge) {
-        const base = factionCol[ge.region.controlling_faction_id] ?? COL_LAND_DEF;
-        fill = isHov ? base : this._dim(base, 0.55);
+        fill = this._regionFill(ge.region, factionCol, isHov);
       }
 
       if (isSel) {
@@ -419,6 +448,31 @@ export class MapView {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, x + 1, y);
+  }
+
+  _regionFill(region, factionCol, isHov) {
+    const dim = c => this._dim(c, isHov ? 1 : 0.55);
+    switch (this._view) {
+      case 'population': {
+        const pop = region.population ?? 0;
+        const col = heatColor(Math.log10(Math.max(pop, 1)), 0, Math.log10(1400), '#1a3a5c', '#00d4ff');
+        return isHov ? col : this._dim(col, 0.75);
+      }
+      case 'unrest': {
+        const u = region.unrest ?? 0;
+        const col = threeStopColor(u, 0, 40, 80, '#27ae60', '#e67e22', '#c0392b');
+        return isHov ? col : this._dim(col, 0.75);
+      }
+      case 'prosperity': {
+        const p = region.prosperity ?? 0;
+        const col = threeStopColor(p, 0, 50, 100, '#c0392b', '#e67e22', '#27ae60');
+        return isHov ? col : this._dim(col, 0.75);
+      }
+      default: { // political
+        const base = factionCol[region.controlling_faction_id] ?? COL_LAND_DEF;
+        return dim(base);
+      }
+    }
   }
 
   _dim(hex, factor) {

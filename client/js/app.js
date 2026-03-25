@@ -170,6 +170,15 @@ function initApp() {
     ordersPanel.addOrder(type, params);
   });
 
+  // Map view toolbar
+  document.querySelectorAll('.map-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.map-view-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      mapView?.setView(btn.dataset.view);
+    });
+  });
+
   // Init panels
   mapView = new MapView(
     document.getElementById('map-canvas'),
