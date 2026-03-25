@@ -191,11 +191,12 @@ class AudioPlayer {
     this._ensureCtx();
     this.entropy = entropy;
 
-    const useCrossfade = entropy <= 70;
-    const fadeOut = useCrossfade ? CROSSFADE_DURATION : 0.05;
+    const hasCurrent   = !!this.current;
+    const fadeOut      = hasCurrent && entropy <= 70 ? CROSSFADE_DURATION : 0;
+    const fadeIn       = hasCurrent ? CROSSFADE_DURATION : 0.4;
 
     // Fade out current
-    if (this.current) {
+    if (hasCurrent) {
       const g = this.current.gainNode;
       g.gain.linearRampToValueAtTime(0, this.ctx.currentTime + fadeOut);
       const prev = this.current;
@@ -209,19 +210,17 @@ class AudioPlayer {
     }
 
     if (track.fallback) {
-      // Procedural Web Audio fallback
       const masterGain = createFallbackNode(this.ctx, mood, entropy);
       masterGain.gain.setValueAtTime(0, this.ctx.currentTime + fadeOut);
-      masterGain.gain.linearRampToValueAtTime(0.8, this.ctx.currentTime + fadeOut + CROSSFADE_DURATION);
+      masterGain.gain.linearRampToValueAtTime(0.8, this.ctx.currentTime + fadeOut + fadeIn);
       this.current = { node: masterGain, gainNode: masterGain };
     } else {
-      // Real audio track
       const el    = new Audio(track.url);
       el.crossOrigin = 'anonymous';
       const src   = this.ctx.createMediaElementSource(el);
       const gain  = this.ctx.createGain();
       gain.gain.setValueAtTime(0, this.ctx.currentTime + fadeOut);
-      gain.gain.linearRampToValueAtTime(0.8, this.ctx.currentTime + fadeOut + CROSSFADE_DURATION);
+      gain.gain.linearRampToValueAtTime(0.8, this.ctx.currentTime + fadeOut + fadeIn);
       src.connect(gain);
       gain.connect(this.ctx.destination);
       el.play().catch(() => {});
@@ -261,11 +260,10 @@ export class MusicPlayer {
    * @param {HTMLInputElement} opts.volumeEl
    * @param {string|null} opts.mubertApiKey  — from Config; null → fallback only
    */
-  constructor({ playBtn, skipBtn, titleEl, volumeEl, mubertApiKey }) {
+  constructor({ playBtn, skipBtn, titleEl, mubertApiKey }) {
     this.playBtn  = playBtn;
     this.skipBtn  = skipBtn;
     this.titleEl  = titleEl;
-    this.volumeEl = volumeEl;
 
     this.mood     = MOODS.BUREAU_NORMAL;
     this.seed     = 0;
@@ -277,7 +275,6 @@ export class MusicPlayer {
 
     playBtn.addEventListener('click', () => this._togglePlay());
     skipBtn.addEventListener('click', () => this.skip());
-    volumeEl.addEventListener('input', () => this.player.setVolume(+volumeEl.value));
 
     this._updateUI();
   }

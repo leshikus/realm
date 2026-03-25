@@ -545,6 +545,13 @@ textarea { resize: vertical; }
 #events-list li.world-event { color: #f1c40f; }
 #events-list li.normal      { color: var(--text); }
 
+.region-link {
+  color: #4a9eff;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+.region-link:hover { color: #7cbfff; }
+
 /* ── Statistics ──────────────────────────────────────────────────────── */
 .charts-grid {
   display: grid;

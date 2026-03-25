@@ -311,9 +311,18 @@ export class MapView {
     this._hovered  = null;
     this._view     = 'political';
 
+    // Zoom / pan state
+    this._zoom  = 1;
+    this._panX  = 0;
+    this._panY  = 0;
+    this._drag  = null;  // { startX, startY, panX0, panY0 }
+
     canvas.addEventListener('click',      e => this._onClick(e));
-    canvas.addEventListener('mousemove',  e => this._onHover(e));
-    canvas.addEventListener('mouseleave', () => { this._hovered = null; this._draw(); });
+    canvas.addEventListener('mousemove',  e => this._onMouseMove(e));
+    canvas.addEventListener('mousedown',  e => this._onMouseDown(e));
+    canvas.addEventListener('mouseup',    () => this._onMouseUp());
+    canvas.addEventListener('mouseleave', () => { this._drag = null; this._hovered = null; this._draw(); });
+    canvas.addEventListener('wheel',      e => this._onWheel(e), { passive: false });
 
     this._ro = new ResizeObserver(() => { if (this._world) this._layout(); });
     this._ro.observe(canvas.parentElement ?? canvas);
@@ -336,6 +345,20 @@ export class MapView {
     this._draw();
   }
 
+  /** Select a region by its game ID and pan the viewport to it. */
+  selectById(regionId) {
+    const entry = this._entries.find(e => e.region.id === regionId);
+    if (!entry) return;
+    this._selected = regionId;
+    // Centre the pan on the region's centroid
+    const W = this.canvas.width, H = this.canvas.height;
+    this._panX = W / 2 - entry.cx * this._zoom;
+    this._panY = H / 2 - entry.cy * this._zoom;
+    this._clampPan();
+    this.onSelect(entry.region);
+    this._draw();
+  }
+
   _layout() {
     const container = this.canvas.parentElement ?? document.body;
     const W = Math.max(container.clientWidth  - 2, 400);
@@ -343,21 +366,39 @@ export class MapView {
     this.canvas.width  = W;
     this.canvas.height = H;
 
+    // Store base (zoom=1) projected coordinates; zoom/pan applied in _draw()
     this._allGeo = Object.entries(GEO_REGIONS).map(([key, geo]) => ({
       key,
-      pts: geo.poly.map(([lon, lat]) => project(lon, lat, W, H)),
+      basePts: geo.poly.map(([lon, lat]) => project(lon, lat, W, H)),
     }));
 
     this._entries = (this._world?.regions ?? []).map(r => {
       const match = findGeo(r.id, r.name);
       if (!match) return null;
       const { key, geo } = match;
-      const pts = geo.poly.map(([lon, lat]) => project(lon, lat, W, H));
-      const { x: cx, y: cy } = project(geo.cx, geo.cy, W, H);
-      return { region: r, pts, cx, cy, key };
+      const basePts = geo.poly.map(([lon, lat]) => project(lon, lat, W, H));
+      const base    = project(geo.cx, geo.cy, W, H);
+      return { region: r, basePts, baseCx: base.x, baseCy: base.y, key };
     }).filter(Boolean);
 
+    this._clampPan();
     this._draw();
+  }
+
+  _transformed(basePts) {
+    return basePts.map(({ x, y }) => ({
+      x: x * this._zoom + this._panX,
+      y: y * this._zoom + this._panY,
+    }));
+  }
+
+  _clampPan() {
+    const W = this.canvas.width  || 400;
+    const H = this.canvas.height || 250;
+    const maxPanX = W * (this._zoom - 1) / 2 + W * 0.1;
+    const maxPanY = H * (this._zoom - 1) / 2 + H * 0.1;
+    this._panX = Math.max(-maxPanX, Math.min(maxPanX, this._panX));
+    this._panY = Math.max(-maxPanY, Math.min(maxPanY, this._panY));
   }
 
   _draw() {
@@ -375,10 +416,11 @@ export class MapView {
     const byKey = {};
     for (const e of this._entries) byKey[e.key] = e;
 
-    for (const { key, pts } of this._allGeo) {
+    for (const { key, basePts } of this._allGeo) {
       const ge    = byKey[key];
       const isSel = ge && this._selected === ge.region.id;
       const isHov = ge && this._hovered  === ge.region.id;
+      const pts   = this._transformed(basePts);
 
       let fill = COL_LAND_DEF;
       if (ge) {
@@ -398,11 +440,13 @@ export class MapView {
       ctx.shadowBlur = 0;
 
       ctx.strokeStyle = isSel ? COL_BORDER_SEL : isHov ? COL_BORDER_HOV : COL_BORDER;
-      ctx.lineWidth   = isSel ? 2 : 0.5;
+      ctx.lineWidth   = isSel ? 2 / this._zoom : 0.5 / this._zoom;
       ctx.stroke();
     }
 
-    for (const { region, cx, cy } of this._entries) {
+    for (const { region, baseCx, baseCy } of this._entries) {
+      const cx = baseCx * this._zoom + this._panX;
+      const cy = baseCy * this._zoom + this._panY;
       this._drawOverlay(ctx, region, cx, cy,
         this._hovered  === region.id,
         this._selected === region.id,
@@ -491,7 +535,8 @@ export class MapView {
     ctx.fillStyle = COL_OCEAN;
     ctx.fillRect(0, 0, W, H);
     if (this._allGeo.length > 0) {
-      for (const { pts } of this._allGeo) {
+      for (const { basePts } of this._allGeo) {
+        const pts = this._transformed(basePts);
         ctx.beginPath();
         pts.forEach(({ x, y }, i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
         ctx.closePath();
@@ -510,6 +555,7 @@ export class MapView {
   }
 
   _onClick(e) {
+    if (this._drag?.moved) return;  // suppress click after drag
     const { x, y } = this._canvasPos(e);
     const hit = this._hitTest(x, y);
     if (hit) {
@@ -520,6 +566,36 @@ export class MapView {
       this.onSelect(null);
     }
     this._draw();
+  }
+
+  _onMouseDown(e) {
+    const { x, y } = this._canvasPos(e);
+    this._drag = { startX: x, startY: y, panX0: this._panX, panY0: this._panY, moved: false };
+    this.canvas.style.cursor = 'grabbing';
+  }
+
+  _onMouseMove(e) {
+    const { x, y } = this._canvasPos(e);
+    if (this._drag) {
+      const dx = x - this._drag.startX;
+      const dy = y - this._drag.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._drag.moved = true;
+      this._panX = this._drag.panX0 + dx;
+      this._panY = this._drag.panY0 + dy;
+      this._clampPan();
+      this._draw();
+      return;
+    }
+    this._onHover(e);
+  }
+
+  _onMouseUp() {
+    if (this._drag && !this._drag.moved) {
+      this.canvas.style.cursor = this._hovered ? 'pointer' : 'default';
+    } else if (this._drag) {
+      this.canvas.style.cursor = 'default';
+    }
+    this._drag = null;
   }
 
   _onHover(e) {
@@ -533,9 +609,23 @@ export class MapView {
     }
   }
 
+  _onWheel(e) {
+    e.preventDefault();
+    const { x, y } = this._canvasPos(e);
+    const factor    = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const newZoom   = Math.max(1, Math.min(8, this._zoom * factor));
+    // Zoom towards cursor
+    this._panX = x - (x - this._panX) * (newZoom / this._zoom);
+    this._panY = y - (y - this._panY) * (newZoom / this._zoom);
+    this._zoom = newZoom;
+    if (this._zoom === 1) { this._panX = 0; this._panY = 0; }
+    this._clampPan();
+    this._draw();
+  }
+
   _hitTest(x, y) {
     for (const entry of this._entries) {
-      if (pointInPoly(x, y, entry.pts)) return entry;
+      if (pointInPoly(x, y, this._transformed(entry.basePts))) return entry;
     }
     return null;
   }

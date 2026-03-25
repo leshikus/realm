@@ -12,7 +12,6 @@ import { StatsPanel }   from './statspanel.js';
 import { OrdersPanel }  from './orderspanel.js';
 import { SetupPanel }   from './setuppanel.js';
 import { RegionInfoPanel }   from './regionpanel.js';
-import { RegionOrdersPanel } from './regionorders.js';
 
 // ── Turn → date ────────────────────────────────────────────────────────────
 const GAME_START_YEAR = new Date().getFullYear();
@@ -114,7 +113,6 @@ function initApp() {
     playBtn:      document.getElementById('btn-music-play'),
     skipBtn:      document.getElementById('btn-music-skip'),
     titleEl:      document.getElementById('music-title'),
-    volumeEl:     document.getElementById('music-volume'),
     mubertApiKey: cfg.mubert_api_key ?? null,
   });
 
@@ -149,13 +147,17 @@ function initApp() {
     cfgMenu.classList.add('hidden');
     openCreateTurnModal();
   });
+  document.getElementById('cfg-setup').addEventListener('click', () => {
+    cfgMenu.classList.add('hidden');
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-setup').classList.add('active');
+  });
 
   // ── Map selection overlay ─────────────────────────────────────────────
   const mapSelectionEl = document.getElementById('map-selection');
   const regionInfoEl   = document.getElementById('region-info');
-  const regionOrdersEl = document.getElementById('region-orders');
 
-  // mapView is assigned below; dismissMapSelection closes over the let binding.
   let mapView;
 
   function dismissMapSelection() {
@@ -163,12 +165,7 @@ function initApp() {
     mapView?.deselect();
   }
 
-  const regionInfoPanel   = new RegionInfoPanel(regionInfoEl, { onDismiss: dismissMapSelection });
-  // ordersPanel is declared below; the lambda closes over it — safe because it only
-  // fires after user interaction, by which point ordersPanel is fully initialised.
-  const regionOrdersPanel = new RegionOrdersPanel(regionOrdersEl, (type, params) => {
-    ordersPanel.addOrder(type, params);
-  });
+  const regionInfoPanel = new RegionInfoPanel(regionInfoEl, { onDismiss: dismissMapSelection });
 
   // Map view toolbar
   document.querySelectorAll('.map-view-btn').forEach(btn => {
@@ -185,7 +182,6 @@ function initApp() {
     (region) => {
       if (region && world) {
         regionInfoPanel.show(region, world);
-        regionOrdersPanel.show(region, world);
         mapSelectionEl.classList.add('open');
       } else {
         mapSelectionEl.classList.remove('open');
@@ -196,6 +192,14 @@ function initApp() {
   const eventViewer = new EventViewer(
     document.getElementById('events-list'),
     document.getElementById('events-filter'),
+    (regionId) => {
+      // Navigate to map tab and select region
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelector('.tab-btn[data-tab="map"]').classList.add('active');
+      document.getElementById('tab-map').classList.add('active');
+      mapView?.selectById(regionId);
+    },
   );
 
   const statsPanel = new StatsPanel();
