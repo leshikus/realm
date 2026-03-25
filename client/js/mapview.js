@@ -276,10 +276,9 @@ function pointInPoly(px, py, pts) {
 // ── MapView ──────────────────────────────────────────────────────────────────
 
 export class MapView {
-  constructor(canvas, detailEl, onSelect) {
+  constructor(canvas, onSelect) {
     this.canvas   = canvas;
     this.ctx      = canvas.getContext('2d');
-    this.detailEl = detailEl;
     this.onSelect = onSelect;
 
     this._world    = null;
@@ -299,8 +298,12 @@ export class MapView {
   render(world) {
     this._world    = world;
     this._selected = null;
-    this.detailEl.classList.add('hidden');
     this._layout();
+  }
+
+  deselect() {
+    this._selected = null;
+    this._draw();
   }
 
   _layout() {
@@ -458,9 +461,11 @@ export class MapView {
     if (hit) {
       this._selected = hit.region.id;
       this.onSelect(hit.region);
-      this._showDetail(hit.region);
-      this._draw();
+    } else {
+      this._selected = null;
+      this.onSelect(null);
     }
+    this._draw();
   }
 
   _onHover(e) {
@@ -479,29 +484,6 @@ export class MapView {
       if (pointInPoly(x, y, entry.pts)) return entry;
     }
     return null;
-  }
-
-  _showDetail(region) {
-    const armies = this._indexBy(this._world.armies ?? [], 'region_id')[region.id] ?? [];
-    const heroes = this._indexBy(this._world.heroes ?? [], 'region_id')[region.id] ?? [];
-    const fc     = this._factionColorMap()[region.controlling_faction_id];
-    const popStr = region.population >= 1000
-      ? `${(region.population / 1000).toFixed(1)}B`
-      : `${region.population}M`;
-    const el = this.detailEl;
-    el.classList.remove('hidden');
-    el.innerHTML = `
-      <h3 style="color:${fc ?? '#a89ad4'}">${region.name}</h3>
-      <div class="stat"><span>Population</span><span class="val">${popStr}</span></div>
-      <div class="stat"><span>Prosperity</span><span class="val">${region.prosperity ?? 0}</span></div>
-      <div class="stat" style="color:${unrestColor(region.unrest ?? 0)}">
-        <span>Unrest</span><span class="val">${region.unrest ?? 0}</span>
-      </div>
-      <div class="stat"><span>Faction</span><span class="val" style="color:${fc ?? COL_MUTED}">${region.controlling_faction_id ?? '—'}</span></div>
-      ${armies.length ? `<div class="stat"><span>Armies</span><span class="val">⚔ ${armies.map(a => a.name).join(', ')}</span></div>` : ''}
-      ${heroes.length ? `<div class="stat"><span>Heroes</span><span class="val">★ ${heroes.map(h => h.name).join(', ')}</span></div>` : ''}
-      <div class="stat"><span>Adjacent</span><span class="val">${(region.adjacent_region_ids ?? []).join(', ') || '—'}</span></div>
-    `;
   }
 
   _factionColorMap() {

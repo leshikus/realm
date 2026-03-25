@@ -11,6 +11,8 @@ import { EventViewer }  from './eventviewer.js';
 import { StatsPanel }   from './statspanel.js';
 import { OrdersPanel }  from './orderspanel.js';
 import { SetupPanel }   from './setuppanel.js';
+import { RegionInfoPanel }   from './regionpanel.js';
+import { RegionOrdersPanel } from './regionorders.js';
 
 // ── Turn → date ────────────────────────────────────────────────────────────
 const GAME_START_YEAR = new Date().getFullYear();
@@ -84,7 +86,7 @@ function showLogin(errorMsg) {
       errEl.textContent = `Token error: ${err.message}`;
       errEl.classList.remove('hidden');
     }
-  });
+  }, { once: true });
 }
 
 // ── Re-auth helper ────────────────────────────────────────────────────────────
@@ -148,11 +150,38 @@ function initApp() {
     openCreateTurnModal();
   });
 
+  // ── Map selection overlay ─────────────────────────────────────────────
+  const mapSelectionEl = document.getElementById('map-selection');
+  const regionInfoEl   = document.getElementById('region-info');
+  const regionOrdersEl = document.getElementById('region-orders');
+
+  // mapView is assigned below; dismissMapSelection closes over the let binding.
+  let mapView;
+
+  function dismissMapSelection() {
+    mapSelectionEl.classList.remove('open');
+    mapView?.deselect();
+  }
+
+  const regionInfoPanel   = new RegionInfoPanel(regionInfoEl, { onDismiss: dismissMapSelection });
+  // ordersPanel is declared below; the lambda closes over it — safe because it only
+  // fires after user interaction, by which point ordersPanel is fully initialised.
+  const regionOrdersPanel = new RegionOrdersPanel(regionOrdersEl, (type, params) => {
+    ordersPanel.addOrder(type, params);
+  });
+
   // Init panels
-  const mapView = new MapView(
+  mapView = new MapView(
     document.getElementById('map-canvas'),
-    document.getElementById('region-detail'),
-    () => {},
+    (region) => {
+      if (region && world) {
+        regionInfoPanel.show(region, world);
+        regionOrdersPanel.show(region, world);
+        mapSelectionEl.classList.add('open');
+      } else {
+        mapSelectionEl.classList.remove('open');
+      }
+    },
   );
 
   const eventViewer = new EventViewer(

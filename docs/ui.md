@@ -87,7 +87,7 @@
 
 ### Map Interactions
 
-- Click region → opens Region Panel (§3)
+- Click region → opens Region Selection UI (§2.4)
 - Click hero marker → opens Hero Sheet (§5.1)
 - Right-click → context menu: *Assign Mission / Observe / Fabricate Report*
 - Scroll to zoom; drag to pan
@@ -102,30 +102,105 @@ Tabs:
 - **Chronicle** — Event Viewer / history log (§7)
 - **Statistics** — Chart.js graphs of metrics over time (§8)
 
+## 2.4 Region Selection UI
+
+Clicking a region on the map opens a two-widget overlay anchored to the bottom of the canvas. The two widgets sit side-by-side. Neither replaces the map — the map remains visible and pannable behind them. Clicking elsewhere on the map (not another region) dismisses both widgets.
+
+```
+┌──────────────────────────────┬──────────────────────────────────────┐
+│  REGION INFO                 │  REGION ORDERS                       │
+│  (read-only; §3)             │  (write; agents + missions; §3.1)    │
+└──────────────────────────────┴──────────────────────────────────────┘
+```
+
+**How selection works:**
+
+1. Player clicks a region polygon on the map canvas.
+2. The selected region is highlighted (glowing border; colour follows map mode).
+3. The **Region Info widget** (left) slides up from the bottom-left of the canvas, populated from the region's current world-state JSON.
+4. The **Region Orders widget** (right) slides up from the bottom-right, pre-filtered to agents currently in or assigned to the selected region.
+5. Clicking a different region swaps both widgets to the new selection without closing them.
+6. Each widget has its own collapse toggle (▼); collapsing one does not affect the other.
+7. Map mode overlays continue to update behind the open widgets — the player can switch modes while a region is selected to see that region's data in context.
+
+// Both widgets are read-only with respect to the simulation. The Region Info widget reads
+// world-state JSON. The Region Orders widget writes only to the local orders queue (client-side),
+// which is submitted as a PR at end of turn. No live engine calls are made from either widget.
+
 ---
 
-# 3. REGION PANEL
+# 3. REGION INFO WIDGET
 
-Opened by clicking any region on the map.
+The left widget in the Region Selection UI (§2.4). Read-only snapshot of the selected region's current state, pulled from `<userid>/regions.json`.
 
-- **Region Name + Controlling Faction**
-- **Stability Index** (0–100; below 30 triggers unrest events)
-- **Belief Composition** (pie: which ideologies dominate)
+- **Region Name + Type badge** *(Core Homeland / Colony / Occupied Territory / Sub-conspiracy / Digital Enclave)*
+- **Controlling Faction**
+- **Stability Index** with colour bar (green → amber → red) and trend arrow (±/turn)
+- **Entropy Level** with threshold indicators (50 / 75 / 90 marked)
+- **Belief Composition** — horizontal stacked bar; tap ideology segment to see its share and dominant stratum
 - **Economy**
   - Trust Output (per turn)
   - Industry Level
-  - Trade Routes (with adjacent regions)
-- **Population** — aggregate and notable groups (guilds, cults, bureaucrat density)
-- **Infrastructure** — present constructions, faith networks, ley lines
-- **Military Presence** — garrison strength, allegiance confidence
-- **Policies in Effect**
-- **Active Events / Ongoing Crises**
-- **Actions** *(added to Orders queue)*
-  - Dispatch Agent
-  - Fund Propaganda
-  - Adjust Taxation
-  - Sponsor Construction
-  - Trigger Audit
+  - Active Trade Routes (with adjacent region names; disrupted routes shown struck-through)
+- **Population** — aggregate headcount; notable groups (guilds, cults, bureaucrat density) as compact tags
+- **Infrastructure** — present constructions and faith networks as icon row
+- **Military Presence** — garrison strength and allegiance confidence
+- **Policies in Effect** — compact list; hover/tap for details
+- **Active Events / Ongoing Crises** — flagged entries with severity colour; tap to open Chronicle entry
+- **Unique Modifier** — the region's permanent modifier shown as a rule card (e.g., `trust_from_trade ×1.5`)
+
+The widget header shows the current map mode's value for this region as a secondary stat (e.g., in Entropy Heat Map mode: "Entropy: 62 / 100"). Switching map mode updates this inline without re-opening the widget.
+
+// No action buttons here. Actions live exclusively in the Region Orders widget (§3.1).
+// This separation is intentional: read context on the left, commit action on the right.
+
+## 3.1 REGION ORDERS WIDGET
+
+The right widget in the Region Selection UI (§2.4). Shows all agents currently present in or assigned to the selected region, and provides controls to queue new orders targeting this region. All actions here are staged to the local orders queue; nothing is sent to the engine until the player submits their turn (§6.3).
+
+### Agent Roster (top section)
+
+A compact list of every hero/agent whose current location or assignment is this region. Each row shows:
+
+- **Portrait thumbnail + Name**
+- **Current status** *(Idle / On Mission / In Transit / Injured / Missing)*
+- **Active mission name** *(if any)*, turns remaining
+- **Loyalty score** + **Paranoia level** as icon badges
+- **Skill summary** — top two skills shown as coloured pips
+- **[Assign Mission]** button — opens the Mission Assignment form inline (see below)
+- **[Recall]** button — stages a Recall order for this agent; greyed out if agent is not yours
+
+If no agents are present in the region, the roster section shows a placeholder: *"No agents in region. Dispatch from Heroic Layer or assign an idle agent."* with a shortcut button to the Heroic Layer tab of the Dominion Panel (§4.2).
+
+### Mission Assignment (inline form, expands on [Assign Mission])
+
+Appears below the selected agent row; collapses other agent rows while open.
+
+- **Mission Type** — dropdown filtered to missions available in this region and agent's skill profile
+  - Infiltrate / Propagandise / Fabricate Evidence / Sponsor a Conspiracy / Blackmail / Assassinate / Audit / Recruit Cultists
+  - Greyed-out options show the blocking reason (e.g., *"Requires Intrigue ≥ 3"*, *"Occupied Territory: Diplomacy blocked"*)
+- **Target** — auto-filled to the current region; can be overridden to a specific faction, sub-region, or named character within the region
+- **Risk Assessment** — success probability estimate and collateral Entropy cost, computed client-side from agent stats and region modifiers; shown as *"~65% / +4 Entropy"* with a disclaimer: *"estimates are heuristic; the engine decides"*
+- **Duration** — estimated turns; not player-settable for most mission types
+- **Resource Cost** — Trust + Influence cost, checked against current budget; shown in red if over budget
+- **[Add to Orders Queue]** — stages the mission order; widget updates to show the pending order tagged on the agent row
+- **[Cancel]** — collapses the form without staging
+
+### Region-Level Actions (bottom section)
+
+Quick-access buttons for orders that target the region itself rather than a specific agent. Each button stages an order to the queue.
+
+- **Fund Propaganda** *(Trust cost shown on hover)*
+- **Adjust Taxation** *(opens a slider for rate delta; shows stability impact estimate)*
+- **Sponsor Construction** *(opens a building picker filtered to this region's available slots)*
+- **Trigger Audit** *(generates Paperwork; small Entropy reduction in target)*
+- **Dispatch Agent** *(opens agent picker from idle roster; creates Dispatch + Assign Mission order pair)*
+
+Staged orders for this region are shown as a compact summary at the bottom of the widget before the button row: *"2 orders staged for [Region Name] this turn"* with a link to the full Orders panel (§6).
+
+// The widget intentionally limits scope to this region. Cross-region operations (e.g., moving an
+// agent from here to another region) are handled in the Orders Panel (§6) or Hero Sheet (§5.1).
+// This keeps the map interaction fast: select, assign, move on.
 
 ---
 

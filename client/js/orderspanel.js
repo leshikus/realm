@@ -15,13 +15,13 @@ const ORDER_TYPES = [
 
 const PARAM_HINTS = {
   army_directive:  '{"army_id": "army_1st", "directive": "hold"}',
-  raise_army:      '{"name": "2nd Legion", "region_id": "reg_valdenmoor", "doctrine": "maneuver"}',
-  recruit_hero:    '{"name": "Vera", "role": "agent", "region_id": "reg_valdenmoor"}',
-  assign_hero:     '{"hero_id": "h001", "target_id": "reg_ashfen"}',
+  raise_army:      '{"name": "2nd Legion", "region_id": "reg_england_wales", "doctrine": "maneuver"}',
+  recruit_hero:    '{"name": "Vera", "role": "agent", "region_id": "reg_england_wales"}',
+  assign_hero:     '{"hero_id": "h001", "target_id": "reg_france_north"}',
   set_propaganda:  '{"faction_id": "fac_bureau", "value": 5}',
-  levy_tax:        '{"region_id": "reg_valdenmoor", "amount": 20}',
-  begin_research:  '{"scholar_hero_id": "h001", "tech": "civic_necromancy"}',
-  build:           '{"region_id": "reg_valdenmoor", "structure": "fort"}',
+  levy_tax:        '{"region_id": "reg_england_wales", "amount": 20}',
+  begin_research:  '{"scholar_hero_id": "h001", "tech": "civic_intelligence"}',
+  build:           '{"region_id": "reg_england_wales", "structure": "fort"}',
 };
 
 export class OrdersPanel {
@@ -58,6 +58,15 @@ export class OrdersPanel {
     this.onSubmit = onSubmit ?? null;
   }
 
+  addOrder(type, params) {
+    this._orders.push({ type, params });
+    const li = document.createElement('li');
+    li.textContent = `${type} — ${JSON.stringify(params)}`;
+    this.listEl.appendChild(li);
+    this.countEl.textContent = `(${this._orders.length})`;
+    this._status(`${this._orders.length} order(s) queued.`);
+  }
+
   _addOrder() {
     const type = this.typeEl.value;
     let params;
@@ -67,12 +76,7 @@ export class OrdersPanel {
       this._status('Invalid JSON params.', 'error');
       return;
     }
-    this._orders.push({ type, params });
-    const li = document.createElement('li');
-    li.textContent = `${type} — ${JSON.stringify(params)}`;
-    this.listEl.appendChild(li);
-    this.countEl.textContent = `(${this._orders.length})`;
-    this._status(`${this._orders.length} order(s) queued.`);
+    this.addOrder(type, params);
   }
 
   _clear() {
@@ -91,8 +95,8 @@ export class OrdersPanel {
     try {
       const payload = { userid: this.userid, turn: this.turn, orders: this._orders };
       const url = await this.gh.submitOrders(this.userid, this.turn, payload);
-      this._status(`PR opened: ${url}`);
       this._clear();
+      this._status(`PR opened: ${url}`);
       this.onSubmit?.();
     } catch (err) {
       this._status(`Error: ${err.message}`, 'error');
