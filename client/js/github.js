@@ -4,9 +4,6 @@
  */
 import { dbg } from './debug.js';
 
-/** The upstream repo all player forks are created from. */
-const CANONICAL_REPO = 'dataved/conspiracy';
-
 /** Thrown when the GitHub API responds with 401. Caller should re-auth. */
 export class AuthError extends Error {
   constructor() { super('GitHub token expired or revoked'); this.status = 401; }
@@ -15,7 +12,7 @@ export class AuthError extends Error {
 export class GitHubClient {
   constructor({ token, repo }) {
     this.token = token;
-    this.repo  = repo;   // "owner/repo"
+    this.repo  = repo;   // "owner/repo" — authenticated user owns this repo
     this.base  = 'https://api.github.com';
   }
 
@@ -41,13 +38,9 @@ export class GitHubClient {
   // ── World state loading ─────────────────────────────────────────────
 
   async loadWorld(userid) {
-    const base = `${userid}`;
-    // Try player's fork first; fall back to canonical repo (world data may live there
-    // before the player has their own fork, or after a CI merge into canonical).
-    const tryJSON = async (path, fallback) => {
-      try { return await this.fetchJSON(path); } catch {}
+    const load = async (path, fallback) => {
       try {
-        const url = `https://raw.githubusercontent.com/${CANONICAL_REPO}/main/${path}`;
+        const url = `https://raw.githubusercontent.com/${this.repo}/main/${path}`;
         const res = await fetch(url);
         if (res.ok) return res.json();
       } catch {}
@@ -56,35 +49,39 @@ export class GitHubClient {
 
     const [heroes, factions, regions, armies, economy, belief, turnObj] =
       await Promise.all([
-        tryJSON(`${base}/heroes.json`,   []),
-        tryJSON(`${base}/factions.json`, []),
-        tryJSON(`${base}/regions.json`,  []),
-        tryJSON(`${base}/armies.json`,   []),
-        tryJSON(`${base}/economy.json`,  {}),
-        tryJSON(`${base}/belief.json`,   {}),
-        tryJSON(`${base}/turn.json`,     { turn: 0 }),
+        load(`${userid}/heroes.json`,   []),
+        load(`${userid}/factions.json`, []),
+        load(`${userid}/regions.json`,  []),
+        load(`${userid}/armies.json`,   []),
+        load(`${userid}/economy.json`,  {}),
+        load(`${userid}/belief.json`,   {}),
+        load(`${userid}/turn.json`,     { turn: 0 }),
       ]);
     return { heroes, factions, regions, armies, economy, belief, turn: turnObj.turn ?? 0 };
   }
 
   async loadEventLog(userid) {
-    const text = await this.fetchText(`${userid}/history/events.log`);
-    if (!text) return [];
+    const url = `https://raw.githubusercontent.com/${this.repo}/main/${userid}/history/events.log`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const text = await res.text();
     return text.split('\n').map(l => l.trim()).filter(Boolean).reverse();
   }
 
   /** Load per-turn stats snapshots for the Statistics panel. */
   async loadStats(userid) {
-    // List files in world/{userid}/history/ via GitHub Trees API
-    const res = await this._get(`/repos/${this.repo}/git/trees/main?recursive=1`);
+    const res    = await this._get(`/repos/${this.repo}/git/trees/main?recursive=1`);
     const prefix = `${userid}/history/stats_`;
-    const files = (res.tree ?? [])
+    const files  = (res.tree ?? [])
       .filter(f => f.path.startsWith(prefix) && f.path.endsWith('.json'))
       .map(f => f.path)
       .sort();
 
     const snapshots = await Promise.all(
-      files.map(f => this.fetchJSON(f).catch(() => null))
+      files.map(f => {
+        const url = `https://raw.githubusercontent.com/${this.repo}/main/${f}`;
+        return fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
+      })
     );
     return snapshots.filter(Boolean);
   }
@@ -97,7 +94,7 @@ export class GitHubClient {
    * should poll isForkReady() after this returns.
    */
   async forkCanonical() {
-    return this._post(`/repos/${CANONICAL_REPO}/forks`, {});
+    return this._post(`/repos/${this.repo}/forks`, {});
   }
 
   /** Returns true once the player's fork exists and is accessible. */
@@ -143,7 +140,7 @@ export class GitHubClient {
    * Returns the PR object (includes html_url).
    */
   async submitJoinPR(userid, branch) {
-    return this._post(`/repos/${CANONICAL_REPO}/pulls`, {
+    return this._post(`/repos/${this.repo}/pulls`, {
       title: `Join: ${userid}`,
       head:  `${userid}:${branch}`,
       base:  'main',
@@ -191,7 +188,7 @@ export class GitHubClient {
     });
 
     // 4. Open PR from fork branch to canonical repo main
-    const pr = await this._post(`/repos/${CANONICAL_REPO}/pulls`, {
+    const pr = await this._post(`/repos/${this.repo}/pulls`, {
       title: `Turn ${turn} orders — ${userid}`,
       head:  `${userid}:${branch}`,
       base:  'main',
@@ -210,11 +207,11 @@ export class GitHubClient {
   async advanceTurn(userid, deadlineUtc = null) {
     const path = 'shared/world.json';
     // Read current world.json
-    const fileRes  = await this._get(`/repos/${CANONICAL_REPO}/contents/${path}`);
+    const fileRes  = await this._get(`/repos/${this.repo}/contents/${path}`);
     const current  = JSON.parse(atob(fileRes.content.replace(/\n/g, '')));
     const nextTurn = (current.current_turn ?? 1) + 1;
     const updated  = { ...current, current_turn: nextTurn, turn_deadline_utc: deadlineUtc ?? null };
-    await this._put(`/repos/${CANONICAL_REPO}/contents/${path}`, {
+    await this._put(`/repos/${this.repo}/contents/${path}`, {
       message: `Advance to turn ${nextTurn}`,
       content: btoa(JSON.stringify(updated, null, 2)),
       sha:     fileRes.sha,

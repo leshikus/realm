@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Highlights
 
 Do not agree to code something that is a bad decision — argue instead until you reach an acceptable solution.
+Do not run `git commit`, I check all commits.
 
 ## Two-Repo Structure
 
