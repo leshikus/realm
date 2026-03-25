@@ -273,8 +273,8 @@ export class MusicPlayer {
     this.buffer = new StreamingBuffer(svc);
     this.player = new AudioPlayer();
 
-    playBtn.addEventListener('click', () => this._togglePlay());
-    skipBtn.addEventListener('click', () => this.skip());
+    playBtn?.addEventListener('click', () => this._togglePlay());
+    skipBtn?.addEventListener('click', () => this.skip());
 
     this._updateUI();
   }
@@ -350,7 +350,7 @@ export class MusicPlayer {
   }
 
   _updateUI() {
-    this.titleEl.textContent  = `♪ ${this.mood.name}`;
-    this.playBtn.textContent  = this.player.paused ? '▶' : '⏸';
+    if (this.titleEl) this.titleEl.textContent = `♪ ${this.mood.name}`;
+    if (this.playBtn) this.playBtn.textContent = this.player.paused ? '▶' : '⏸';
   }
 }
