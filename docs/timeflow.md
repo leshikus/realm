@@ -1,5 +1,42 @@
 # Timeflow: Timestamped World State & Timeline Divergence
 
+## In-Game Time
+
+Each turn represents **7 in-game days**.
+
+Dates are displayed as day + month name: `1 Jan`, `8 Jan`, `15 Jan`, `22 Jan`.
+
+Each month has exactly four weeks (28 days), so every month has the same four turn dates: the 1st, 8th, 15th, and 22nd.
+
+### Turn-to-date formula
+
+```python
+def turn_to_date(turn: int) -> str:
+    day_index    = (turn - 1) * 7       # 0-based day offset from 1 Jan
+    year         = day_index // 336 + 1 # 336 days per year (12 × 28)
+    day_of_year  = day_index % 336      # 0–335
+    month_index  = day_of_year // 28    # 0–11
+    day_of_month = day_of_year % 28 + 1 # 1, 8, 15, or 22
+
+    months = ["Jan","Feb","Mar","Apr","May","Jun",
+              "Jul","Aug","Sep","Oct","Nov","Dec"]
+    return f"{day_of_month} {months[month_index]} {year}"
+```
+
+| Turn | Date     |
+|------|----------|
+| 1    | 1 Jan 1  |
+| 2    | 8 Jan 1  |
+| 3    | 15 Jan 1 |
+| 4    | 22 Jan 1 |
+| 5    | 1 Feb 1  |
+| 48   | 22 Dec 1 |
+| 49   | 1 Jan 2  |
+
+---
+
+
+
 ---
 
 ## Core Idea

@@ -287,9 +287,10 @@ export class MusicPlayer {
     this.world        = world;
     const newMood     = resolveMood(world);
     const moodChanged = newMood.key !== this.mood.key;
+    // Only auto-play if user has already started playback (avoid AudioContext before user gesture)
     this.mood         = newMood;
 
-    if (moodChanged) {
+    if (moodChanged && !this.player.paused) {
       this.seed = 0;
       this._playNext();
     }
@@ -329,7 +330,9 @@ export class MusicPlayer {
     const entropy = this.world?.economy?.entropy ?? 0;
     try {
       const track = await this.buffer.advance(this.mood, this.seed);
-      await this.player.play(track.url !== undefined ? track : { fallback: true }, this.mood, entropy);
+      // Only use as real audio if url is an actual string (not a fallback sentinel object)
+      const isReal = typeof track.url === 'string';
+      await this.player.play(isReal ? track : { fallback: true }, this.mood, entropy);
     } catch {
       await this.player.play({ fallback: true }, this.mood, entropy);
     }

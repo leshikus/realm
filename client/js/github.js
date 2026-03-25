@@ -201,6 +201,27 @@ export class GitHubClient {
     return pr.html_url;
   }
 
+  // ── Turn management ────────────────────────────────────────────────
+
+  /**
+   * Advance shared/world.json to the next turn and optionally set a deadline.
+   * This writes directly to the canonical repo's main branch (game-master only).
+   */
+  async advanceTurn(userid, deadlineUtc = null) {
+    const path = 'shared/world.json';
+    // Read current world.json
+    const fileRes  = await this._get(`/repos/${CANONICAL_REPO}/contents/${path}`);
+    const current  = JSON.parse(atob(fileRes.content.replace(/\n/g, '')));
+    const nextTurn = (current.current_turn ?? 1) + 1;
+    const updated  = { ...current, current_turn: nextTurn, turn_deadline_utc: deadlineUtc ?? null };
+    await this._put(`/repos/${CANONICAL_REPO}/contents/${path}`, {
+      message: `Advance to turn ${nextTurn}`,
+      content: btoa(JSON.stringify(updated, null, 2)),
+      sha:     fileRes.sha,
+    });
+    return nextTurn;
+  }
+
   // ── HTTP helpers ────────────────────────────────────────────────────
 
   _headers() {

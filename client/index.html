@@ -36,8 +36,15 @@
         <button id="btn-music-skip" title="Next track">▶▶</button>
         <input id="music-volume" type="range" min="0" max="1" step="0.05" value="0.4" title="Volume" />
       </div>
-      <button id="btn-reload">↻ Reload</button>
-      <button id="btn-config">⚙ Config</button>
+      <div id="config-menu-wrap">
+        <button id="btn-config">⚙ Options</button>
+        <div id="config-menu" class="dropdown-menu hidden">
+          <button class="dropdown-item" id="cfg-reload">↻ Refresh world</button>
+          <button class="dropdown-item" id="cfg-new-turn">+ Create turn</button>
+          <hr class="dropdown-sep" />
+          <button class="dropdown-item" id="cfg-logout">⏏ Log out</button>
+        </div>
+      </div>
       <button id="btn-debug" class="hidden">DBG</button>
     </header>
 
@@ -118,6 +125,28 @@
           <p id="pr-status" class="setup-step-status"></p>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Create Turn modal -->
+  <div id="create-turn-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h3>Create Turn</h3>
+      <p class="hint">Advance the world to the next turn and set a submission deadline.</p>
+      <label>Current turn
+        <input id="ct-current" type="text" readonly />
+      </label>
+      <label>Next turn
+        <input id="ct-next" type="text" readonly />
+      </label>
+      <label>Deadline (UTC)
+        <input id="ct-deadline" type="datetime-local" />
+      </label>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="ct-confirm" class="primary">Advance Turn</button>
+        <button id="ct-cancel">Cancel</button>
+      </div>
+      <p id="ct-status" class="hint" style="margin-top:6px"></p>
     </div>
   </div>
 

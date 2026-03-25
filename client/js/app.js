@@ -12,6 +12,15 @@ import { StatsPanel }   from './statspanel.js';
 import { OrdersPanel }  from './orderspanel.js';
 import { SetupPanel }   from './setuppanel.js';
 
+// ── Turn → date ────────────────────────────────────────────────────────────
+const GAME_START_YEAR = new Date().getFullYear();
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function turnToDate(turn) {
+  const d = new Date(GAME_START_YEAR, 0, 1 + (turn - 1) * 7);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 let gh     = null;
 let world  = null;
@@ -117,16 +126,27 @@ function initApp() {
     });
   });
 
-  // Config button — clear and return to login
-  document.getElementById('btn-config').addEventListener('click', () => {
-    if (confirm('Log out and reset configuration?')) {
-      Config.clear();
-      location.reload();
-    }
+  // Config dropdown menu
+  const cfgWrap  = document.getElementById('config-menu-wrap');
+  const cfgMenu  = document.getElementById('config-menu');
+  document.getElementById('btn-config').addEventListener('click', e => {
+    e.stopPropagation();
+    cfgMenu.classList.toggle('hidden');
   });
+  document.addEventListener('click', () => cfgMenu.classList.add('hidden'));
 
-  // Reload button
-  document.getElementById('btn-reload').addEventListener('click', () => loadWorld());
+  document.getElementById('cfg-reload').addEventListener('click', () => {
+    cfgMenu.classList.add('hidden');
+    loadWorld();
+  });
+  document.getElementById('cfg-logout').addEventListener('click', () => {
+    cfgMenu.classList.add('hidden');
+    if (confirm('Log out and reset configuration?')) { Config.clear(); location.reload(); }
+  });
+  document.getElementById('cfg-new-turn').addEventListener('click', () => {
+    cfgMenu.classList.add('hidden');
+    openCreateTurnModal();
+  });
 
   // Init panels
   const mapView = new MapView(
@@ -182,7 +202,7 @@ function initApp() {
       dbg.setWorld(world);
       music.update(world);
 
-      document.getElementById('header-turn').textContent  = `Turn ${world.turn}`;
+      document.getElementById('header-turn').textContent  = turnToDate(world.turn);
       document.getElementById('header-trust').textContent = `Trust: ${world.economy.trust ?? 0}`;
 
       mapView.render(world);
@@ -207,6 +227,39 @@ function initApp() {
       console.error(err);
     }
   }
+
+  // ── Create Turn modal ─────────────────────────────────────────────────────
+  function openCreateTurnModal() {
+    const current = world?.turn ?? 1;
+    const next    = current + 1;
+    document.getElementById('ct-current').value = `Turn ${current} — ${turnToDate(current)}`;
+    document.getElementById('ct-next').value    = `Turn ${next} — ${turnToDate(next)}`;
+    // Default deadline: 7 days from now at noon UTC
+    const dl = new Date();
+    dl.setDate(dl.getDate() + 7);
+    dl.setHours(12, 0, 0, 0);
+    document.getElementById('ct-deadline').value = dl.toISOString().slice(0, 16);
+    document.getElementById('ct-status').textContent = '';
+    document.getElementById('create-turn-modal').classList.remove('hidden');
+  }
+
+  document.getElementById('ct-cancel').addEventListener('click', () => {
+    document.getElementById('create-turn-modal').classList.add('hidden');
+  });
+
+  document.getElementById('ct-confirm').addEventListener('click', async () => {
+    const statusEl  = document.getElementById('ct-status');
+    const deadlineEl = document.getElementById('ct-deadline');
+    const deadline  = deadlineEl.value ? new Date(deadlineEl.value).toISOString() : null;
+    statusEl.textContent = 'Advancing turn…';
+    try {
+      await gh.advanceTurn(cfg.userid, deadline);
+      document.getElementById('create-turn-modal').classList.add('hidden');
+      await loadWorld();
+    } catch (err) {
+      statusEl.textContent = `Error: ${err.message}`;
+    }
+  });
 
   loadWorld();
 }
