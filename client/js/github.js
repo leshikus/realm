@@ -18,21 +18,32 @@ export class GitHubClient {
 
   // ── Raw file fetch ──────────────────────────────────────────────────
 
-  /** Fetch a JSON file from the repo's default branch. */
+  /**
+   * Fetch a file via the GitHub Contents API (authenticated, avoids raw rate limits).
+   * Returns decoded text content, or null for 404.
+   */
+  async _fetchContents(repo, path) {
+    const res = await fetch(`${this.base}/repos/${repo}/contents/${path}`, {
+      headers: this._headers(),
+    });
+    if (res.status === 404) return null;
+    if (res.status === 401) throw new AuthError();
+    if (!res.ok) throw new Error(`fetchContents ${path}: ${res.status}`);
+    const data = await res.json();
+    // Contents API returns base64-encoded content
+    return atob(data.content.replace(/\n/g, ''));
+  }
+
+  /** Fetch a JSON file from the repo's default branch (authenticated). */
   async fetchJSON(path) {
-    const url = `https://raw.githubusercontent.com/${this.repo}/main/${path}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`fetchJSON ${path}: ${res.status}`);
-    return res.json();
+    const text = await this._fetchContents(this.repo, path);
+    if (text === null) throw new Error(`fetchJSON ${path}: 404`);
+    return JSON.parse(text);
   }
 
   /** Fetch a text file (e.g. events.log). Returns string or null. */
   async fetchText(path) {
-    const url = `https://raw.githubusercontent.com/${this.repo}/main/${path}`;
-    const res = await fetch(url);
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`fetchText ${path}: ${res.status}`);
-    return res.text();
+    return this._fetchContents(this.repo, path);
   }
 
   // ── World state loading ─────────────────────────────────────────────
@@ -40,9 +51,8 @@ export class GitHubClient {
   async loadWorld(userid) {
     const load = async (path, fallback) => {
       try {
-        const url = `https://raw.githubusercontent.com/${this.repo}/main/${path}`;
-        const res = await fetch(url);
-        if (res.ok) return res.json();
+        const text = await this._fetchContents(this.repo, path);
+        if (text !== null) return JSON.parse(text);
       } catch {}
       return fallback;
     };
@@ -61,10 +71,8 @@ export class GitHubClient {
   }
 
   async loadEventLog(userid) {
-    const url = `https://raw.githubusercontent.com/${this.repo}/main/${userid}/history/events.log`;
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const text = await res.text();
+    const text = await this._fetchContents(this.repo, `${userid}/history/events.log`);
+    if (!text) return [];
     return text.split('\n').map(l => l.trim()).filter(Boolean).reverse();
   }
 
@@ -78,10 +86,11 @@ export class GitHubClient {
       .sort();
 
     const snapshots = await Promise.all(
-      files.map(f => {
-        const url = `https://raw.githubusercontent.com/${this.repo}/main/${f}`;
-        return fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
-      })
+      files.map(f =>
+        this._fetchContents(this.repo, f)
+          .then(t => t ? JSON.parse(t) : null)
+          .catch(() => null)
+      )
     );
     return snapshots.filter(Boolean);
   }
