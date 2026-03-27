@@ -1,6 +1,15 @@
 /**
  * mapview.js — Geographic polygon world map (~150 regions).
- * Regions are drawn as rectangular geographic polygons (equirectangular projection).
+ *
+ * Spec: docs/map.md
+ *
+ * Key behaviours:
+ *  - Equirectangular projection, equirectangular wrapping at ±180°
+ *  - Horizontal pan is cyclic (infinite longitude wrap; §6.4)
+ *  - Vertical pan is hard-clamped at the poles
+ *  - Zoom range: 0.5 … 8 (§5.1)
+ *  - Input: mouse wheel, trackpad/touch pinch, keyboard +/-, touch drag, tap-to-select
+ *  - devicePixelRatio-aware canvas sizing (§4.3)
  */
 
 // ── Colours ──────────────────────────────────────────────────────────────────
@@ -28,8 +37,7 @@ function unrestColor(u) {
 }
 
 // ── Geographic polygon data ──────────────────────────────────────────────────
-// _b(W, S, E, N) creates a rectangular polygon from bounding box.
-// Equirectangular: x = (lon+180)/360, y = (90-lat)/180.
+// _b(W, S, E, N) creates a rectangular polygon from a bounding box.
 
 function _b(W, S, E, N) {
   return { poly: [[W,N],[E,N],[E,S],[W,S]], cx: (W+E)/2, cy: (N+S)/2 };
@@ -220,13 +228,11 @@ function findGeo(id, name) {
   if (GEO_REGIONS[nid])   return { key: nid,   geo: GEO_REGIONS[nid] };
   if (GEO_REGIONS[nname]) return { key: nname, geo: GEO_REGIONS[nname] };
 
-  // Substring match (only for longer keys to avoid false positives)
   for (const key of Object.keys(GEO_REGIONS)) {
     if (key.length >= 5 && nid.length >= 5 && (nid === key || nid.includes(key) || key.includes(nid)))
       return { key, geo: GEO_REGIONS[key] };
   }
 
-  // Common aliases
   const ALIAS = {
     usa: 'usa_midwest', america: 'usa_midwest',
     russia: 'russia_northwest', siberia: 'siberia_west',
@@ -249,13 +255,18 @@ function findGeo(id, name) {
 }
 
 // ── Projection ───────────────────────────────────────────────────────────────
+//
+// No horizontal padding — the map spans exactly [0, W] so that tiles join
+// seamlessly at the antimeridian (lon ±180 → x = 0 or W).
+//
+// Vertical padding keeps polar regions from touching the canvas edge.
 
-const MAP_PAD = 6;
+const MAP_PAD_Y = 6;
 
 function project(lon, lat, W, H) {
   return {
-    x: MAP_PAD + ((lon + 180) / 360) * (W - MAP_PAD * 2),
-    y: MAP_PAD + ((90 - lat) / 180) * (H - MAP_PAD * 2),
+    x: ((lon + 180) / 360) * W,
+    y: MAP_PAD_Y + ((90 - lat) / 180) * (H - MAP_PAD_Y * 2),
   };
 }
 
@@ -273,8 +284,6 @@ function pointInPoly(px, py, pts) {
   return inside;
 }
 
-// ── MapView ──────────────────────────────────────────────────────────────────
-
 // ── View-mode colour helpers ──────────────────────────────────────────────────
 
 const VIEWS = {
@@ -287,9 +296,9 @@ const VIEWS = {
 function lerp(a, b, t) { return a + (b - a) * t; }
 
 function heatColor(value, lo, hi, fromHex, toHex) {
-  const t   = Math.max(0, Math.min(1, (value - lo) / (hi - lo)));
-  const fr  = parseInt(fromHex.slice(1,3),16), fg = parseInt(fromHex.slice(3,5),16), fb = parseInt(fromHex.slice(5,7),16);
-  const tr  = parseInt(toHex.slice(1,3),16),   tg = parseInt(toHex.slice(3,5),16),   tb = parseInt(toHex.slice(5,7),16);
+  const t  = Math.max(0, Math.min(1, (value - lo) / (hi - lo)));
+  const fr = parseInt(fromHex.slice(1,3),16), fg = parseInt(fromHex.slice(3,5),16), fb = parseInt(fromHex.slice(5,7),16);
+  const tr = parseInt(toHex.slice(1,3),16),   tg = parseInt(toHex.slice(3,5),16),   tb = parseInt(toHex.slice(5,7),16);
   return `rgb(${Math.round(lerp(fr,tr,t))},${Math.round(lerp(fg,tg,t))},${Math.round(lerp(fb,tb,t))})`;
 }
 
@@ -298,6 +307,13 @@ function threeStopColor(value, lo, mid, hi, colLo, colMid, colHi) {
   return heatColor(value, mid, hi, colMid, colHi);
 }
 
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 8;
+
+// ── MapView ──────────────────────────────────────────────────────────────────
+
 export class MapView {
   constructor(canvas, onSelect) {
     this.canvas   = canvas;
@@ -305,17 +321,24 @@ export class MapView {
     this.onSelect = onSelect;
 
     this._world    = null;
-    this._entries  = [];  // { region, pts, cx, cy, key }
-    this._allGeo   = [];  // { key, pts }
+    this._entries  = [];   // { region, basePts, baseCx, baseCy, key }
+    this._allGeo   = [];   // { key, basePts }
     this._selected = null;
     this._hovered  = null;
     this._view     = 'political';
 
-    // Zoom / pan state
+    // Zoom / pan state (in logical/CSS pixels)
     this._zoom  = 1;
-    this._panX  = 0;
+    this._panX  = 0;   // unclamped; normalised in _draw / _hitTest
     this._panY  = 0;
-    this._drag  = null;  // { startX, startY, panX0, panY0 }
+
+    // Drag state
+    this._drag  = null;   // { startX, startY, panX0, panY0, moved }
+    this._pinch = null;   // { dist0, zoom0, panX0, panY0 }
+
+    // Keyboard zoom
+    this._keyHandler = e => this._onKey(e);
+    document.addEventListener('keydown', this._keyHandler);
 
     canvas.addEventListener('click',      e => this._onClick(e));
     canvas.addEventListener('mousemove',  e => this._onMouseMove(e));
@@ -324,9 +347,15 @@ export class MapView {
     canvas.addEventListener('mouseleave', () => { this._drag = null; this._hovered = null; this._draw(); });
     canvas.addEventListener('wheel',      e => this._onWheel(e), { passive: false });
 
-    this._ro = new ResizeObserver(() => { if (this._world) this._layout(); });
+    canvas.addEventListener('touchstart', e => this._onTouchStart(e), { passive: false });
+    canvas.addEventListener('touchmove',  e => this._onTouchMove(e),  { passive: false });
+    canvas.addEventListener('touchend',   e => this._onTouchEnd(e),   { passive: false });
+
+    this._ro = new ResizeObserver(() => { if (this._world || this._allGeo.length) this._layout(); });
     this._ro.observe(canvas.parentElement ?? canvas);
   }
+
+  // ── Public API ────────────────────────────────────────────────────────────
 
   render(world) {
     this._world    = world;
@@ -345,28 +374,37 @@ export class MapView {
     this._draw();
   }
 
-  /** Select a region by its game ID and pan the viewport to it. */
+  /** Select a region by game ID and centre the viewport on it. */
   selectById(regionId) {
     const entry = this._entries.find(e => e.region.id === regionId);
     if (!entry) return;
     this._selected = regionId;
-    // Centre the pan on the region's centroid
-    const W = this.canvas.width, H = this.canvas.height;
-    this._panX = W / 2 - entry.cx * this._zoom;
-    this._panY = H / 2 - entry.cy * this._zoom;
-    this._clampPan();
+    const { W, H } = this._logSize();
+    this._panX = W / 2 - entry.baseCx * this._zoom;
+    this._panY = H / 2 - entry.baseCy * this._zoom;
+    this._clampPanY();
     this.onSelect(entry.region);
     this._draw();
   }
 
+  // ── Layout ────────────────────────────────────────────────────────────────
+
   _layout() {
     const container = this.canvas.parentElement ?? document.body;
-    const W = Math.max(container.clientWidth  - 2, 400);
-    const H = Math.max(container.clientHeight - 2, 250);
-    this.canvas.width  = W;
-    this.canvas.height = H;
+    const W = Math.max(container.clientWidth,  400);
+    const H = Math.max(container.clientHeight, 250);
+    const dpr = window.devicePixelRatio || 1;
 
-    // Store base (zoom=1) projected coordinates; zoom/pan applied in _draw()
+    // Physical canvas size
+    this.canvas.width  = Math.round(W * dpr);
+    this.canvas.height = Math.round(H * dpr);
+    this.canvas.style.width  = W + 'px';
+    this.canvas.style.height = H + 'px';
+
+    // All draw calls use logical (CSS) pixel coordinates
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Pre-compute base (zoom=1, panX=0, panY=0) polygon points
     this._allGeo = Object.entries(GEO_REGIONS).map(([key, geo]) => ({
       key,
       basePts: geo.poly.map(([lon, lat]) => project(lon, lat, W, H)),
@@ -381,78 +419,143 @@ export class MapView {
       return { region: r, basePts, baseCx: base.x, baseCy: base.y, key };
     }).filter(Boolean);
 
-    this._clampPan();
+    this._clampPanY();
     this._draw();
   }
 
-  _transformed(basePts) {
+  // ── Coordinate helpers ────────────────────────────────────────────────────
+
+  /** Logical canvas size in CSS pixels. */
+  _logSize() {
+    return {
+      W: this.canvas.width  / (window.devicePixelRatio || 1),
+      H: this.canvas.height / (window.devicePixelRatio || 1),
+    };
+  }
+
+  /** Tile width = full map width at current zoom. Since MAP_PAD_X=0, tileW = W×zoom. */
+  _tileW() { return this._logSize().W * this._zoom; }
+
+  /**
+   * Normalise _panX into [0, tileW) so floats don't drift after long drag sessions.
+   * Called only at end of interaction, not during drag, to preserve smooth motion.
+   */
+  _normalisePanX() {
+    const tileW = this._tileW();
+    this._panX = ((this._panX % tileW) + tileW) % tileW;
+  }
+
+  /** Hard-clamp vertical pan only; horizontal wraps freely. */
+  _clampPanY() {
+    const { H } = this._logSize();
+    const mapH   = H * this._zoom;
+    const maxPanY = Math.max(0, (mapH - H) / 2);
+    this._panY = Math.max(-maxPanY, Math.min(maxPanY, this._panY));
+  }
+
+  /**
+   * Transform base-space points into screen space using a given tilePanX.
+   * @param {{x,y}[]} basePts
+   * @param {number}  tilePanX  — the X offset for this tile pass
+   */
+  _transformedAt(basePts, tilePanX) {
     return basePts.map(({ x, y }) => ({
-      x: x * this._zoom + this._panX,
+      x: x * this._zoom + tilePanX,
       y: y * this._zoom + this._panY,
     }));
   }
 
-  _clampPan() {
-    const W = this.canvas.width  || 400;
-    const H = this.canvas.height || 250;
-    const maxPanX = W * (this._zoom - 1) / 2 + W * 0.1;
-    const maxPanY = H * (this._zoom - 1) / 2 + H * 0.1;
-    this._panX = Math.max(-maxPanX, Math.min(maxPanX, this._panX));
-    this._panY = Math.max(-maxPanY, Math.min(maxPanY, this._panY));
-  }
+  // ── Rendering ─────────────────────────────────────────────────────────────
 
   _draw() {
-    const W = this.canvas.width, H = this.canvas.height;
+    const { W, H } = this._logSize();
     const ctx = this.ctx;
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = COL_OCEAN;
     ctx.fillRect(0, 0, W, H);
 
-    if (!this._world) { this._drawEmpty(); return; }
+    if (!this._world) { this._drawEmpty(W, H); return; }
 
     const factionCol = this._factionColorMap();
-    const armies     = this._indexBy(this._world.armies ?? [],  'region_id');
-    const heroes     = this._indexBy(this._world.heroes ?? [],  'region_id');
-    const byKey = {};
+    const armies     = this._indexBy(this._world.armies ?? [], 'region_id');
+    const heroes     = this._indexBy(this._world.heroes ?? [], 'region_id');
+    const byKey      = {};
     for (const e of this._entries) byKey[e.key] = e;
 
-    for (const { key, basePts } of this._allGeo) {
-      const ge    = byKey[key];
-      const isSel = ge && this._selected === ge.region.id;
-      const isHov = ge && this._hovered  === ge.region.id;
-      const pts   = this._transformed(basePts);
+    const tileW    = W * this._zoom;
+    const normPanX = ((this._panX % tileW) + tileW) % tileW;
+    const tilesNeeded = Math.ceil(W / tileW) + 1;
 
-      let fill = COL_LAND_DEF;
-      if (ge) {
-        fill = this._regionFill(ge.region, factionCol, isHov);
+    // Draw regions for each visible tile copy
+    for (let n = -1; n <= tilesNeeded; n++) {
+      const tilePanX = normPanX + n * tileW;
+      if (tilePanX > W || tilePanX + tileW < 0) continue;
+
+      for (const { key, basePts } of this._allGeo) {
+        const ge    = byKey[key];
+        const isSel = ge && this._selected === ge.region.id;
+        const isHov = ge && this._hovered  === ge.region.id;
+        const pts   = this._transformedAt(basePts, tilePanX);
+        const fill  = ge ? this._regionFill(ge.region, factionCol, isHov) : COL_LAND_DEF;
+
+        if (isSel) {
+          ctx.shadowColor = factionCol[ge.region.controlling_faction_id] ?? '#7070b0';
+          ctx.shadowBlur  = 16;
+        }
+
+        ctx.beginPath();
+        pts.forEach(({ x, y }, i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.strokeStyle = isSel ? COL_BORDER_SEL : isHov ? COL_BORDER_HOV : COL_BORDER;
+        ctx.lineWidth   = isSel ? 2 / this._zoom : 0.5 / this._zoom;
+        ctx.stroke();
       }
 
-      if (isSel) {
-        ctx.shadowColor = factionCol[ge.region.controlling_faction_id] ?? '#7070b0';
-        ctx.shadowBlur  = 16;
+      // Overlays (labels, badges) for this tile
+      for (const { region, baseCx, baseCy } of this._entries) {
+        const cx = baseCx * this._zoom + tilePanX;
+        const cy = baseCy * this._zoom + this._panY;
+        if (cx < -60 || cx > W + 60) continue;  // outside viewport
+        this._drawOverlay(ctx, region, cx, cy,
+          this._hovered  === region.id,
+          this._selected === region.id,
+          armies[region.id] ?? [],
+          heroes[region.id] ?? []);
       }
+    }
+  }
 
-      ctx.beginPath();
-      pts.forEach(({ x, y }, i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
-      ctx.closePath();
-      ctx.fillStyle = fill;
-      ctx.fill();
-      ctx.shadowBlur = 0;
+  _drawEmpty(W, H) {
+    const ctx      = this.ctx;
+    const tileW    = W * this._zoom;
+    const normPanX = ((this._panX % tileW) + tileW) % tileW;
+    const tilesNeeded = Math.ceil(W / tileW) + 1;
 
-      ctx.strokeStyle = isSel ? COL_BORDER_SEL : isHov ? COL_BORDER_HOV : COL_BORDER;
-      ctx.lineWidth   = isSel ? 2 / this._zoom : 0.5 / this._zoom;
-      ctx.stroke();
+    for (let n = -1; n <= tilesNeeded; n++) {
+      const tilePanX = normPanX + n * tileW;
+      if (tilePanX > W || tilePanX + tileW < 0) continue;
+      for (const { basePts } of this._allGeo) {
+        const pts = this._transformedAt(basePts, tilePanX);
+        ctx.beginPath();
+        pts.forEach(({ x, y }, i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+        ctx.closePath();
+        ctx.fillStyle   = COL_LAND_DEF;
+        ctx.fill();
+        ctx.strokeStyle = COL_BORDER;
+        ctx.lineWidth   = 0.5 / this._zoom;
+        ctx.stroke();
+      }
     }
 
-    for (const { region, baseCx, baseCy } of this._entries) {
-      const cx = baseCx * this._zoom + this._panX;
-      const cy = baseCy * this._zoom + this._panY;
-      this._drawOverlay(ctx, region, cx, cy,
-        this._hovered  === region.id,
-        this._selected === region.id,
-        armies[region.id] ?? [],
-        heroes[region.id] ?? []);
-    }
+    ctx.fillStyle    = COL_MUTED;
+    ctx.font         = '14px system-ui';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('No world data — complete setup or wait for turn 1.', W / 2, H / 2);
   }
 
   _drawOverlay(ctx, region, cx, cy, isHov, isSel, armies, heroes) {
@@ -487,9 +590,9 @@ export class MapView {
     ctx.fillStyle = color;
     _roundRect(ctx, x - 10, y - 7, 22, 14, 4);
     ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 8px system-ui';
-    ctx.textAlign = 'center';
+    ctx.fillStyle    = '#fff';
+    ctx.font         = 'bold 8px system-ui';
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, x + 1, y);
   }
@@ -512,7 +615,7 @@ export class MapView {
         const col = threeStopColor(p, 0, 50, 100, '#c0392b', '#e67e22', '#27ae60');
         return isHov ? col : this._dim(col, 0.75);
       }
-      default: { // political
+      default: {  // political
         const base = factionCol[region.controlling_faction_id] ?? COL_LAND_DEF;
         return dim(base);
       }
@@ -528,34 +631,36 @@ export class MapView {
     return `rgb(${Math.round(r * factor)},${Math.round(g * factor)},${Math.round(b * factor)})`;
   }
 
-  _drawEmpty() {
-    const W = this.canvas.width  || 480;
-    const H = this.canvas.height || 140;
-    const ctx = this.ctx;
-    ctx.fillStyle = COL_OCEAN;
-    ctx.fillRect(0, 0, W, H);
-    if (this._allGeo.length > 0) {
-      for (const { basePts } of this._allGeo) {
-        const pts = this._transformed(basePts);
-        ctx.beginPath();
-        pts.forEach(({ x, y }, i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
-        ctx.closePath();
-        ctx.fillStyle   = COL_LAND_DEF;
-        ctx.fill();
-        ctx.strokeStyle = COL_BORDER;
-        ctx.lineWidth   = 0.5;
-        ctx.stroke();
+  // ── Hit test ──────────────────────────────────────────────────────────────
+  //
+  // Convert screen (sx, sy) to base space and test against basePts directly,
+  // trying all tile offsets that could be visible at the current pan.
+
+  _hitTest(sx, sy) {
+    const { W } = this._logSize();
+    const tileW    = W * this._zoom;
+    const normPanX = ((this._panX % tileW) + tileW) % tileW;
+
+    // Base y (same for all tiles)
+    const by = (sy - this._panY) / this._zoom;
+
+    const tilesNeeded = Math.ceil(W / tileW) + 1;
+    for (let n = -1; n <= tilesNeeded; n++) {
+      const tilePanX = normPanX + n * tileW;
+      if (tilePanX > W || tilePanX + tileW < 0) continue;
+
+      const bx = (sx - tilePanX) / this._zoom;
+      for (const entry of this._entries) {
+        if (pointInPoly(bx, by, entry.basePts)) return entry;
       }
     }
-    ctx.fillStyle = COL_MUTED;
-    ctx.font = '14px system-ui';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('No world data — complete setup or wait for turn 1.', W / 2, H / 2);
+    return null;
   }
 
+  // ── Mouse input ───────────────────────────────────────────────────────────
+
   _onClick(e) {
-    if (this._drag?.moved) return;  // suppress click after drag
+    if (this._drag?.moved) return;
     const { x, y } = this._canvasPos(e);
     const hit = this._hitTest(x, y);
     if (hit) {
@@ -580,9 +685,9 @@ export class MapView {
       const dx = x - this._drag.startX;
       const dy = y - this._drag.startY;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._drag.moved = true;
-      this._panX = this._drag.panX0 + dx;
+      this._panX = this._drag.panX0 + dx;     // unclamped — wraps in _draw()
       this._panY = this._drag.panY0 + dy;
-      this._clampPan();
+      this._clampPanY();
       this._draw();
       return;
     }
@@ -590,12 +695,14 @@ export class MapView {
   }
 
   _onMouseUp() {
-    if (this._drag && !this._drag.moved) {
-      this.canvas.style.cursor = this._hovered ? 'pointer' : 'default';
-    } else if (this._drag) {
-      this.canvas.style.cursor = 'default';
-    }
+    const wasDragging = this._drag?.moved;
     this._drag = null;
+    if (!wasDragging) {
+      this.canvas.style.cursor = this._hovered ? 'pointer' : 'default';
+    } else {
+      this.canvas.style.cursor = 'default';
+      this._normalisePanX();  // prevent float drift after long drag
+    }
   }
 
   _onHover(e) {
@@ -612,23 +719,110 @@ export class MapView {
   _onWheel(e) {
     e.preventDefault();
     const { x, y } = this._canvasPos(e);
-    const factor    = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    const newZoom   = Math.max(1, Math.min(8, this._zoom * factor));
-    // Zoom towards cursor
-    this._panX = x - (x - this._panX) * (newZoom / this._zoom);
-    this._panY = y - (y - this._panY) * (newZoom / this._zoom);
+    this._applyZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, x, y);
+  }
+
+  // ── Keyboard input (§5.4) ─────────────────────────────────────────────────
+
+  _onKey(e) {
+    // Only respond when no input/textarea is focused
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (e.key === '+' || e.key === '=') this._applyZoom(1.15);
+    if (e.key === '-')                   this._applyZoom(1 / 1.15);
+  }
+
+  _applyZoom(factor, pivotX, pivotY) {
+    const { W, H } = this._logSize();
+    const cx = pivotX ?? W / 2;
+    const cy = pivotY ?? H / 2;
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._zoom * factor));
+    const ratio   = newZoom / this._zoom;
+    this._panX = cx - (cx - this._panX) * ratio;
+    this._panY = cy - (cy - this._panY) * ratio;
     this._zoom = newZoom;
-    if (this._zoom === 1) { this._panX = 0; this._panY = 0; }
-    this._clampPan();
+    this._clampPanY();
     this._draw();
   }
 
-  _hitTest(x, y) {
-    for (const entry of this._entries) {
-      if (pointInPoly(x, y, this._transformed(entry.basePts))) return entry;
+  // ── Touch input (§12) ─────────────────────────────────────────────────────
+
+  _onTouchStart(e) {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+      const pos = this._touchPos(e.touches[0]);
+      this._drag  = { startX: pos.x, startY: pos.y, panX0: this._panX, panY0: this._panY, moved: false };
+      this._pinch = null;
+    } else if (e.touches.length === 2) {
+      this._drag  = null;
+      this._pinch = {
+        dist0: this._touchDist(e.touches[0], e.touches[1]),
+        zoom0: this._zoom,
+        panX0: this._panX,
+        panY0: this._panY,
+        midX:  (this._touchPos(e.touches[0]).x + this._touchPos(e.touches[1]).x) / 2,
+        midY:  (this._touchPos(e.touches[0]).y + this._touchPos(e.touches[1]).y) / 2,
+      };
     }
-    return null;
   }
+
+  _onTouchMove(e) {
+    e.preventDefault();
+    if (e.touches.length === 1 && this._drag) {
+      const pos = this._touchPos(e.touches[0]);
+      const dx  = pos.x - this._drag.startX;
+      const dy  = pos.y - this._drag.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._drag.moved = true;
+      this._panX = this._drag.panX0 + dx;
+      this._panY = this._drag.panY0 + dy;
+      this._clampPanY();
+      this._draw();
+    } else if (e.touches.length === 2 && this._pinch) {
+      const dist   = this._touchDist(e.touches[0], e.touches[1]);
+      const factor = dist / this._pinch.dist0;
+      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._pinch.zoom0 * factor));
+      const ratio   = newZoom / this._pinch.zoom0;
+      this._panX = this._pinch.midX - (this._pinch.midX - this._pinch.panX0) * ratio;
+      this._panY = this._pinch.midY - (this._pinch.midY - this._pinch.panY0) * ratio;
+      this._zoom = newZoom;
+      this._clampPanY();
+      this._draw();
+    }
+  }
+
+  _onTouchEnd(e) {
+    e.preventDefault();
+    if (e.touches.length === 0) {
+      // Tap to select
+      if (this._drag && !this._drag.moved) {
+        const hit = this._hitTest(this._drag.startX, this._drag.startY);
+        if (hit) {
+          this._selected = hit.region.id;
+          this.onSelect(hit.region);
+        } else {
+          this._selected = null;
+          this.onSelect(null);
+        }
+      }
+      if (this._drag?.moved) this._normalisePanX();
+      this._drag  = null;
+      this._pinch = null;
+      this._draw();
+    }
+  }
+
+  _touchPos(touch) {
+    const r = this.canvas.getBoundingClientRect();
+    return { x: touch.clientX - r.left, y: touch.clientY - r.top };
+  }
+
+  _touchDist(t1, t2) {
+    const dx = t1.clientX - t2.clientX;
+    const dy = t1.clientY - t2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
 
   _factionColorMap() {
     const map = {};
