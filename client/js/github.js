@@ -207,6 +207,35 @@ export class GitHubClient {
     return pr.html_url;
   }
 
+  // ── Music library ───────────────────────────────────────────────────
+
+  /** Load {userid}/music.json from the player's fork. Returns {} on missing. */
+  async loadMusicLibrary(userid) {
+    try {
+      const text = await this._fetchContents(this.repo, `${userid}/music.json`);
+      return text ? JSON.parse(text) : {};
+    } catch { return {}; }
+  }
+
+  /** Commit {userid}/music.json to the player's fork (creates or updates). */
+  async saveMusicLibrary(userid, data) {
+    const path    = `${userid}/music.json`;
+    const content = JSON.stringify(data, null, 2);
+
+    // Fetch existing SHA (needed for update)
+    let existingSha;
+    try {
+      const existing = await this._get(`/repos/${this.repo}/contents/${path}`);
+      existingSha = existing.sha;
+    } catch {}
+
+    await this._put(`/repos/${this.repo}/contents/${path}`, {
+      message: 'Update music library',
+      content: btoa(unescape(encodeURIComponent(content))),
+      ...(existingSha ? { sha: existingSha } : {}),
+    });
+  }
+
   // ── Turn management ────────────────────────────────────────────────
 
   /**

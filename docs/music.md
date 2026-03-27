@@ -106,6 +106,88 @@ The fallback track is not a placeholder — it is an intentional aesthetic choic
 
 ---
 
+## YouTube Playlist Variant
+
+When AI generation services are unavailable or unwanted, the client can use a curated YouTube-backed playlist as the music source. This variant is configured in **Music Settings** (⚙ Options → ♪ Music Settings).
+
+### How It Works
+
+The player maintains a **Music Library** (`music.json`, per-player, stored in localStorage and optionally synced to the player's GitHub fork). The library is a map of mood keys to saved track lists:
+
+```json
+{
+  "BUREAU_NORMAL":      [{ "videoId": "abc123", "title": "...", "channel": "...", "addedAt": "2026-03-27" }],
+  "PARANOID_STABILITY": [],
+  ...
+}
+```
+
+At playback time, the library is consulted for the current mood. Tracks play in round-robin order via the YouTube IFrame Player API (embedded in the client at 0×0 — audio only). When the active mood changes, the player crossfades to the next saved track for the new mood (or shows a "no tracks — add some" notice if that mood is empty).
+
+### Track Discovery — Client Search
+
+The ♫ button in the music player header opens the **Music Library modal**. It has two tabs:
+
+**Saved Tracks tab**
+- Shows all saved tracks for the selected mood
+- ▶ Play: immediately plays the track in the active player
+- ✕ Remove: removes from the library and syncs to storage
+
+**Search YouTube tab**
+- Requires a YouTube Data API key (configured in Music Settings)
+- Search input is pre-filled with the mood's default query:
+
+| Mood | Default search query |
+|---|---|
+| Bureau Normal | `bureaucratic ambient ost soundtrack institutional` |
+| Paranoid Stability | `paranoia dark ambient drone soundtrack ost` |
+| The Memo Arrives | `tense cinematic build orchestral ost` |
+| Productive Decline | `melancholic synthwave ost soundtrack` |
+| Active Unrest | `industrial glitch electronic ost soundtrack` |
+| World Event | `cinematic sting dramatic orchestral ost` |
+| Collapse Imminent | `dark noise atonal experimental ost` |
+| The Bureau Dissolves | `minimal ambient silence piano ost` |
+
+- Results show: thumbnail, title, channel, **+ Save** button, **↗ Open** link (opens video in new tab for preview)
+- Saved tracks are persisted immediately to localStorage and queued for GitHub sync
+
+### Auto-Save
+
+When a track plays past the configured threshold (default: 80% of duration), it is automatically saved to the library for that mood. Tracks that are skipped before the threshold are not saved. This lets the player populate their library passively by skipping what they don't want.
+
+The threshold is configurable in Music Settings (0–100%).
+
+### MP3 Extraction Mode
+
+As an alternative to YouTube IFrame playback, the client supports routing audio through a configurable **MP3 Extract Service**. This is intended for players running a local or self-hosted extraction tool (e.g. a yt-dlp HTTP wrapper or compatible API).
+
+Configuration: provide the service endpoint URL in Music Settings. The client calls:
+
+```
+GET {endpoint}?url=https://www.youtube.com/watch?v={videoId}
+```
+
+Expected response:
+```json
+{ "url": "https://..." }
+```
+
+The returned URL is played via the existing HTML5 `Audio` element with crossfade. If the service fails, the client falls back to direct YouTube IFrame playback for that track.
+
+### Configuration (Music Settings)
+
+All options are stored in `Config` (localStorage) alongside the GitHub token:
+
+| Key | Type | Description |
+|---|---|---|
+| `music_mode` | `"procedural"` / `"youtube"` / `"mp3"` | Active music source |
+| `youtube_api_key` | string | YouTube Data API v3 key (for search only) |
+| `mp3_service_url` | string | MP3 extract service endpoint (MP3 mode only) |
+| `music_autosave` | boolean | Auto-save tracks beyond threshold |
+| `music_autosave_pct` | number 0–100 | Auto-save threshold (default: 80) |
+
+---
+
 ## Integration with Game Events
 
 ### Turn Resolution Cue

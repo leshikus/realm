@@ -4,7 +4,8 @@
  */
 import { Config }       from './config.js';
 import { GitHubClient, AuthError } from './github.js';
-import { MusicPlayer }  from './musicplayer.js';
+import { MusicPlayer, MOODS }  from './musicplayer.js';
+import { YTMusicPlayer, MusicLibrary, YouTubePlayer, YouTubeSearchService, MOOD_QUERIES } from './youtubemusic.js';
 import { dbg, initDebugPanel } from './debug.js';
 import { MapView }      from './mapview.js';
 import { EventViewer }  from './eventviewer.js';
@@ -23,10 +24,12 @@ function turnToDate(turn) {
 }
 
 // ── State ──────────────────────────────────────────────────────────────────
-let gh     = null;
-let world  = null;
-let cfg    = null;
-let music  = null;
+let gh      = null;
+let world   = null;
+let cfg     = null;
+let music   = null;
+let library = null;   // MusicLibrary (always created; used by YTMusicPlayer)
+let ytPlayer = null;  // shared YouTubePlayer instance
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -109,12 +112,42 @@ function initApp() {
 
   gh = new GitHubClient({ token: cfg.github_token, repo: cfg.github_repo });
 
-  music = new MusicPlayer({
-    playBtn:      document.getElementById('btn-music-play'),
-    skipBtn:      document.getElementById('btn-music-skip'),
-    titleEl:      document.getElementById('music-title'),
-    mubertApiKey: cfg.mubert_api_key ?? null,
-  });
+  // ── Music library (always created; populated after world load) ──────
+  library  = new MusicLibrary();
+  ytPlayer = new YouTubePlayer(document.getElementById('yt-player-container'));
+
+  music = _createMusicPlayer();
+
+  function _createMusicPlayer() {
+    const mode = cfg.music_mode ?? 'procedural';
+    if (mode === 'youtube' || mode === 'mp3') {
+      return new YTMusicPlayer({
+        playBtn:       document.getElementById('btn-music-play'),
+        skipBtn:       document.getElementById('btn-music-skip'),
+        titleEl:       document.getElementById('music-title'),
+        library,
+        ytPlayer,
+        mode,
+        mp3ServiceUrl: cfg.mp3_service_url ?? '',
+        autosave:      cfg.music_autosave ?? true,
+        autosavePct:   cfg.music_autosave_pct ?? 80,
+        onAutoSave:    async (moodKey, track) => {
+          const added = library.addTrack(moodKey, track);
+          if (added) {
+            dbg.info('Auto-saved track', { moodKey, title: track.title });
+            gh?.saveMusicLibrary(cfg.userid, library.toJSON()).catch(() => {});
+          }
+        },
+      });
+    }
+    // Default: procedural / Mubert
+    return new MusicPlayer({
+      playBtn:      document.getElementById('btn-music-play'),
+      skipBtn:      document.getElementById('btn-music-skip'),
+      titleEl:      document.getElementById('music-title'),
+      mubertApiKey: cfg.mubert_api_key ?? null,
+    });
+  }
 
   // Tab switching
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -152,6 +185,11 @@ function initApp() {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.getElementById('tab-setup').classList.add('active');
+  });
+
+  document.getElementById('cfg-music').addEventListener('click', () => {
+    cfgMenu.classList.add('hidden');
+    openMusicSettingsModal();
   });
 
   // ── Map selection overlay ─────────────────────────────────────────────
@@ -244,6 +282,11 @@ function initApp() {
       dbg.setWorld(world);
       music.update(world);
 
+      // Sync music library from GitHub (non-blocking; localStorage already loaded)
+      gh.loadMusicLibrary(cfg.userid).then(data => {
+        if (data && Object.keys(data).length) library.loadData(data);
+      }).catch(() => {});
+
       document.getElementById('header-turn').textContent  = turnToDate(world.turn);
       document.getElementById('header-trust').textContent = `Trust: ${world.economy.trust ?? 0}`;
 
@@ -269,6 +312,207 @@ function initApp() {
       console.error(err);
     }
   }
+
+  // ── Music library search button ───────────────────────────────────────────
+  document.getElementById('btn-music-search').addEventListener('click', () => openMusicModal());
+
+  // ── Music library modal ───────────────────────────────────────────────────
+
+  const musicModal = document.getElementById('music-modal');
+
+  function openMusicModal() {
+    musicModal.classList.remove('hidden');
+    _populateMoodSelects();
+    _renderSavedPane();
+    _updateMoodBadge();
+  }
+
+  function _closeMusicModal() { musicModal.classList.add('hidden'); }
+
+  document.getElementById('mm-close-btn').addEventListener('click', _closeMusicModal);
+  musicModal.addEventListener('click', e => { if (e.target === musicModal) _closeMusicModal(); });
+
+  // Tab switching
+  musicModal.querySelectorAll('.mm-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      musicModal.querySelectorAll('.mm-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('mm-pane-saved').classList.toggle('hidden', tab.dataset.mmTab !== 'saved');
+      document.getElementById('mm-pane-search').classList.toggle('hidden', tab.dataset.mmTab !== 'search');
+      if (tab.dataset.mmTab === 'search') _preFillSearch();
+    });
+  });
+
+  function _updateMoodBadge() {
+    document.getElementById('mm-mood-badge').textContent = music?.mood?.name ?? '';
+  }
+
+  function _populateMoodSelects() {
+    const opts = Object.values(MOODS).map(m =>
+      `<option value="${m.key}">${m.name}</option>`
+    ).join('');
+    document.getElementById('mm-mood-select').innerHTML = opts;
+    document.getElementById('mm-search-mood-select').innerHTML = opts;
+    // Default to current mood
+    const cur = music?.mood?.key ?? 'BUREAU_NORMAL';
+    document.getElementById('mm-mood-select').value = cur;
+    document.getElementById('mm-search-mood-select').value = cur;
+  }
+
+  function _renderSavedPane() {
+    const mood   = document.getElementById('mm-mood-select').value;
+    const tracks = library.tracksForMood(mood);
+    const el     = document.getElementById('mm-saved-list');
+
+    if (!tracks.length) {
+      el.innerHTML = `<div class="mm-empty">No tracks saved for this mood.<br>Use the Search tab to find and add some.</div>`;
+      return;
+    }
+
+    el.innerHTML = tracks.map((t, i) => `
+      <div class="mm-track-row">
+        <span class="mm-track-title" title="${t.title}">${t.title}</span>
+        <span class="mm-track-ch" title="${t.channel ?? ''}">${t.channel ?? ''}</span>
+        <a class="mm-open-link" href="https://www.youtube.com/watch?v=${t.videoId}" target="_blank" rel="noopener" title="Open on YouTube">↗</a>
+        <button class="mm-remove-btn" data-idx="${i}" data-mood="${mood}" title="Remove">✕</button>
+      </div>
+    `).join('');
+
+    el.querySelectorAll('.mm-remove-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const track = library.tracksForMood(btn.dataset.mood)[+btn.dataset.idx];
+        if (!track) return;
+        library.removeTrack(btn.dataset.mood, track.videoId);
+        _renderSavedPane();
+        _setMmStatus(`Removed "${track.title}"`);
+        gh?.saveMusicLibrary(cfg.userid, library.toJSON()).catch(() => {});
+      });
+    });
+  }
+
+  document.getElementById('mm-mood-select').addEventListener('change', _renderSavedPane);
+
+  // Sync to GitHub
+  document.getElementById('mm-sync-gh').addEventListener('click', async () => {
+    _setMmStatus('Syncing…');
+    try {
+      await gh.saveMusicLibrary(cfg.userid, library.toJSON());
+      _setMmStatus('Synced to GitHub ✓');
+    } catch (err) {
+      _setMmStatus(`Sync failed: ${err.message}`);
+    }
+  });
+
+  // Search pane
+  function _preFillSearch() {
+    const mood = document.getElementById('mm-search-mood-select').value;
+    const inp  = document.getElementById('mm-search-input');
+    if (!inp.value) inp.value = MOOD_QUERIES[mood] ?? '';
+    const note = document.getElementById('mm-search-note');
+    note.textContent = cfg.youtube_api_key
+      ? ''
+      : 'No YouTube API key configured. Add one in ⚙ Music Settings to enable search.';
+  }
+
+  document.getElementById('mm-search-mood-select').addEventListener('change', _preFillSearch);
+
+  document.getElementById('mm-search-btn').addEventListener('click', async () => {
+    if (!cfg.youtube_api_key) {
+      document.getElementById('mm-search-note').textContent =
+        'Add a YouTube Data API key in ⚙ Music Settings to use search.';
+      return;
+    }
+    const query = document.getElementById('mm-search-input').value.trim();
+    const mood  = document.getElementById('mm-search-mood-select').value;
+    if (!query) return;
+
+    const resultsEl = document.getElementById('mm-search-results');
+    resultsEl.innerHTML = '<div class="mm-empty">Searching…</div>';
+
+    try {
+      const svc     = new YouTubeSearchService(cfg.youtube_api_key);
+      const results = await svc.search(query);
+      _renderSearchResults(results, mood);
+    } catch (err) {
+      resultsEl.innerHTML = `<div class="mm-empty" style="color:var(--danger)">${err.message}</div>`;
+    }
+  });
+
+  function _renderSearchResults(results, moodKey) {
+    const el = document.getElementById('mm-search-results');
+    if (!results.length) {
+      el.innerHTML = '<div class="mm-empty">No results found.</div>';
+      return;
+    }
+
+    el.innerHTML = results.map((r, i) => `
+      <div class="mm-result-row">
+        ${r.thumb ? `<img src="${r.thumb}" class="mm-thumb" alt="" />` : ''}
+        <div class="mm-result-info">
+          <span class="mm-track-title" title="${r.title}">${r.title}</span>
+          <span class="mm-track-ch">${r.channel}</span>
+        </div>
+        <a class="mm-open-link" href="https://www.youtube.com/watch?v=${r.videoId}" target="_blank" rel="noopener" title="Open on YouTube">↗</a>
+        <button class="mm-save-result primary" data-idx="${i}" title="Save for ${MOODS[moodKey]?.name ?? moodKey}">+ Save</button>
+      </div>
+    `).join('');
+
+    el.querySelectorAll('.mm-save-result').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const r     = results[+btn.dataset.idx];
+        const added = library.addTrack(moodKey, { videoId: r.videoId, title: r.title, channel: r.channel });
+        if (added) {
+          btn.textContent  = '✓ Saved';
+          btn.disabled     = true;
+          btn.classList.remove('primary');
+          _setMmStatus(`Saved "${r.title}" for ${MOODS[moodKey]?.name ?? moodKey}`);
+          gh?.saveMusicLibrary(cfg.userid, library.toJSON()).catch(() => {});
+        } else {
+          btn.textContent = 'Already saved';
+          btn.disabled    = true;
+        }
+      });
+    });
+  }
+
+  function _setMmStatus(msg) {
+    const el = document.getElementById('mm-status');
+    el.textContent = msg;
+    setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
+  }
+
+  // ── Music settings modal ──────────────────────────────────────────────────
+
+  const musicSettingsModal = document.getElementById('music-settings-modal');
+
+  function openMusicSettingsModal() {
+    // Populate form from cfg
+    document.getElementById('ms-mode').value          = cfg.music_mode ?? 'procedural';
+    document.getElementById('ms-yt-key').value        = cfg.youtube_api_key ?? '';
+    document.getElementById('ms-mp3-url').value       = cfg.mp3_service_url ?? '';
+    document.getElementById('ms-autosave').checked    = cfg.music_autosave ?? true;
+    document.getElementById('ms-autosave-pct').value  = cfg.music_autosave_pct ?? 80;
+    document.getElementById('ms-status').textContent  = '';
+    musicSettingsModal.classList.remove('hidden');
+  }
+
+  document.getElementById('ms-cancel').addEventListener('click', () => {
+    musicSettingsModal.classList.add('hidden');
+  });
+  musicSettingsModal.addEventListener('click', e => {
+    if (e.target === musicSettingsModal) musicSettingsModal.classList.add('hidden');
+  });
+
+  document.getElementById('ms-save').addEventListener('click', () => {
+    cfg.music_mode        = document.getElementById('ms-mode').value;
+    cfg.youtube_api_key   = document.getElementById('ms-yt-key').value.trim() || undefined;
+    cfg.mp3_service_url   = document.getElementById('ms-mp3-url').value.trim() || undefined;
+    cfg.music_autosave    = document.getElementById('ms-autosave').checked;
+    cfg.music_autosave_pct = parseInt(document.getElementById('ms-autosave-pct').value, 10) || 80;
+    Config.save(cfg);
+    document.getElementById('ms-status').textContent = 'Saved. Reloading…';
+    setTimeout(() => location.reload(), 800);
+  });
 
   // ── Create Turn modal ─────────────────────────────────────────────────────
   function openCreateTurnModal() {
