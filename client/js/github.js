@@ -209,17 +209,17 @@ export class GitHubClient {
 
   // ── Music library ───────────────────────────────────────────────────
 
-  /** Load {userid}/music.json from the player's fork. Returns {} on missing. */
+  /** Load shared/music.json from the repo. Returns {} on missing. */
   async loadMusicLibrary(userid) {
     try {
-      const text = await this._fetchContents(this.repo, `${userid}/music.json`);
+      const text = await this._fetchContents(this.repo, `shared/music.json`);
       return text ? JSON.parse(text) : {};
     } catch { return {}; }
   }
 
-  /** Commit {userid}/music.json to the player's fork (creates or updates). */
+  /** Commit shared/music.json to the repo (creates or updates). */
   async saveMusicLibrary(userid, data) {
-    const path    = `${userid}/music.json`;
+    const path    = `shared/music.json`;
     const content = JSON.stringify(data, null, 2);
 
     // Fetch existing SHA (needed for update)
