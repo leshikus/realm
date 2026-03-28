@@ -32,6 +32,8 @@ python -m engine.main <userid> <turn>
 
 The browser client (`client/`) is vanilla HTML/CSS/JS — no build step.
 
+**Live deployment:** https://leshikus.github.io/conspiracy-game/ — use this URL with Playwright to test client-side bugs.
+
 ## Architecture
 
 ### Turn Resolution Pipeline

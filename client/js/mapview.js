@@ -390,9 +390,11 @@ export class MapView {
   // ── Layout ────────────────────────────────────────────────────────────────
 
   _layout() {
-    const container = this.canvas.parentElement ?? document.body;
-    const W = Math.max(container.clientWidth,  400);
-    const H = Math.max(container.clientHeight, 250);
+    // Clear explicit styles so flex assigns the canvas its natural allocated size
+    this.canvas.style.width  = '';
+    this.canvas.style.height = '';
+    const W = Math.max(this.canvas.clientWidth,  400);
+    const H = Math.max(this.canvas.clientHeight, 250);
     const dpr = window.devicePixelRatio || 1;
 
     // Physical canvas size
@@ -418,6 +420,10 @@ export class MapView {
       const base    = project(geo.cx, geo.cy, W, H);
       return { region: r, basePts, baseCx: base.x, baseCy: base.y, key };
     }).filter(Boolean);
+
+    // Index for O(1) lookup in _hitTest
+    this._byKey = {};
+    for (const e of this._entries) this._byKey[e.key] = e;
 
     this._clampPanY();
     this._draw();
@@ -650,8 +656,8 @@ export class MapView {
       if (tilePanX > W || tilePanX + tileW < 0) continue;
 
       const bx = (sx - tilePanX) / this._zoom;
-      for (const entry of this._entries) {
-        if (pointInPoly(bx, by, entry.basePts)) return entry;
+      for (const { key, basePts } of this._allGeo) {
+        if (pointInPoly(bx, by, basePts)) return this._byKey[key] ?? null;
       }
     }
     return null;
