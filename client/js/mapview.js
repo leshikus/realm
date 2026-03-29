@@ -4,10 +4,8 @@
  * Spec: docs/map.md
  *
  * Key behaviours:
- *  - Equirectangular projection, equirectangular wrapping at ±180°
- *  - Horizontal pan is cyclic (infinite longitude wrap; §6.4)
- *  - Vertical pan is hard-clamped at the poles
- *  - Zoom range: 0.5 … 8 (§5.1)
+ *  - Orthographic (globe) projection; drag rotates lon0/lat0
+ *  - Zoom range: 0.5 … 8 (scales globe radius)
  *  - Input: mouse wheel, trackpad/touch pinch, keyboard +/-, touch drag, tap-to-select
  *  - devicePixelRatio-aware canvas sizing (§4.3)
  */
@@ -256,29 +254,31 @@ function findGeo(id, name) {
 
 // ── Projection ───────────────────────────────────────────────────────────────
 //
-// No horizontal padding — the map spans exactly [0, W] so that tiles join
-// seamlessly at the antimeridian (lon ±180 → x = 0 or W).
-//
-// Vertical padding keeps polar regions from touching the canvas edge.
+// Orthographic projection centred at (lon0, lat0).
+// Returns {x, y} in screen pixels, or null if the point is on the back hemisphere.
 
-const MAP_PAD_Y = 6;
-
-function project(lon, lat, W, H) {
+function projectOrtho(lon, lat, lon0, lat0, R, cx, cy) {
+  const toRad = Math.PI / 180;
+  const φ  = lat  * toRad;
+  const φ0 = lat0 * toRad;
+  const Δλ = (lon - lon0) * toRad;
+  const cosC = Math.sin(φ0) * Math.sin(φ) + Math.cos(φ0) * Math.cos(φ) * Math.cos(Δλ);
+  if (cosC <= 0) return null;
   return {
-    x: ((lon + 180) / 360) * W,
-    y: MAP_PAD_Y + ((90 - lat) / 180) * (H - MAP_PAD_Y * 2),
+    x: cx + R * Math.cos(φ) * Math.sin(Δλ),
+    y: cy - R * (Math.cos(φ0) * Math.sin(φ) - Math.sin(φ0) * Math.cos(φ) * Math.cos(Δλ)),
   };
 }
 
-// ── Point-in-polygon (ray casting) ───────────────────────────────────────────
+// ── Point-in-polygon (ray casting, lon/lat space) ────────────────────────────
 
-function pointInPoly(px, py, pts) {
+function pointInPolyLonLat(lon, lat, poly) {
   let inside = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const { x: xi, y: yi } = pts[i];
-    const { x: xj, y: yj } = pts[j];
-    if (((yi > py) !== (yj > py)) &&
-        (px < ((xj - xi) * (py - yi)) / (yj - yi) + xi))
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (((yi > lat) !== (yj > lat)) &&
+        (lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi))
       inside = !inside;
   }
   return inside;
@@ -321,8 +321,8 @@ export class MapView {
     this.onSelect = onSelect;
 
     this._world    = null;
-    this._entries  = [];   // { region, basePts, baseCx, baseCy, key }
-    this._allGeo   = [];   // { key, basePts }
+    this._entries  = [];   // { region, key, cLon, cLat }
+    this._allGeo   = [];   // { key, poly, cLon, cLat }
     this._selected = null;
     this._hovered  = null;
     this._view     = 'political';
@@ -374,14 +374,13 @@ export class MapView {
     this._draw();
   }
 
-  /** Select a region by game ID and centre the viewport on it. */
+  /** Select a region by game ID and rotate the globe to centre on it. */
   selectById(regionId) {
     const entry = this._entries.find(e => e.region.id === regionId);
     if (!entry) return;
     this._selected = regionId;
-    const { W, H } = this._logSize();
-    this._panX = W / 2 - entry.baseCx * this._zoom;
-    this._panY = H / 2 - entry.baseCy * this._zoom;
+    this._panX = entry.cLon;
+    this._panY = entry.cLat;
     this._clampPanY();
     this.onSelect(entry.region);
     this._draw();
@@ -406,19 +405,25 @@ export class MapView {
     // All draw calls use logical (CSS) pixel coordinates
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Pre-compute base (zoom=1, panX=0, panY=0) polygon points
+    // Store raw lon/lat — projected per-frame in _draw()
     this._allGeo = Object.entries(GEO_REGIONS).map(([key, geo]) => ({
       key,
-      basePts: geo.poly.map(([lon, lat]) => project(lon, lat, W, H)),
+      poly: geo.poly,   // [[lon, lat], ...]
+      cLon: geo.cx,
+      cLat: geo.cy,
     }));
 
     this._entries = (this._world?.regions ?? []).map(r => {
+      if (r.lon != null && r.lat != null) {
+        // Use lon/lat from regions.json directly; derive key from id
+        const key = r.id.replace(/^reg_/, '');
+        return { region: r, key, cLon: r.lon, cLat: r.lat };
+      }
+      // Fallback: fuzzy-match via GEO_REGIONS
       const match = findGeo(r.id, r.name);
       if (!match) return null;
       const { key, geo } = match;
-      const basePts = geo.poly.map(([lon, lat]) => project(lon, lat, W, H));
-      const base    = project(geo.cx, geo.cy, W, H);
-      return { region: r, basePts, baseCx: base.x, baseCy: base.y, key };
+      return { region: r, key, cLon: geo.cx, cLat: geo.cy };
     }).filter(Boolean);
 
     // Index for O(1) lookup in _hitTest
@@ -439,70 +444,61 @@ export class MapView {
     };
   }
 
-  /** Tile width = full map width at current zoom. Since MAP_PAD_X=0, tileW = W×zoom. */
-  _tileW() { return this._logSize().W * this._zoom; }
+  /** Globe radius in logical pixels at current zoom. */
+  _globeR(W, H) { return Math.max(10, Math.min(W, H) / 2 * this._zoom - 4); }
 
-  /**
-   * Normalise _panX into [0, tileW) so floats don't drift after long drag sessions.
-   * Called only at end of interaction, not during drag, to preserve smooth motion.
-   */
+  /** Normalise lon0 to [-180, 180] after long drag sessions. */
   _normalisePanX() {
-    const tileW = this._tileW();
-    this._panX = ((this._panX % tileW) + tileW) % tileW;
+    this._panX = ((this._panX + 180) % 360 + 360) % 360 - 180;
   }
 
-  /** Hard-clamp vertical pan only; horizontal wraps freely. */
+  /** Clamp lat0 so the poles stay on the globe. */
   _clampPanY() {
-    const { H } = this._logSize();
-    const mapH   = H * this._zoom;
-    const maxPanY = Math.max(0, (mapH - H) / 2);
-    this._panY = Math.max(-maxPanY, Math.min(maxPanY, this._panY));
-  }
-
-  /**
-   * Transform base-space points into screen space using a given tilePanX.
-   * @param {{x,y}[]} basePts
-   * @param {number}  tilePanX  — the X offset for this tile pass
-   */
-  _transformedAt(basePts, tilePanX) {
-    return basePts.map(({ x, y }) => ({
-      x: x * this._zoom + tilePanX,
-      y: y * this._zoom + this._panY,
-    }));
+    this._panY = Math.max(-85, Math.min(85, this._panY));
   }
 
   // ── Rendering ─────────────────────────────────────────────────────────────
 
   _draw() {
     const { W, H } = this._logSize();
-    const ctx = this.ctx;
+    const ctx  = this.ctx;
+    const cx   = W / 2, cy = H / 2;
+    const R    = this._globeR(W, H);
+    const lon0 = this._panX, lat0 = this._panY;
+
     ctx.clearRect(0, 0, W, H);
+
+    // Ocean sphere
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
     ctx.fillStyle = COL_OCEAN;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fill();
 
-    if (!this._world) { this._drawEmpty(W, H); return; }
+    // Clip all land drawing to the globe disc
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.clip();
 
-    const factionCol = this._factionColorMap();
-    const armies     = this._indexBy(this._world.armies ?? [], 'region_id');
-    const heroes     = this._indexBy(this._world.heroes ?? [], 'region_id');
-    const byKey      = {};
-    for (const e of this._entries) byKey[e.key] = e;
+    if (!this._world) {
+      this._drawEmpty(ctx, lon0, lat0, R, cx, cy);
+    } else {
+      const factionCol = this._factionColorMap();
+      const armies     = this._indexBy(this._world.armies ?? [], 'region_id');
+      const heroes     = this._indexBy(this._world.heroes ?? [], 'region_id');
 
-    const tileW    = W * this._zoom;
-    const normPanX = ((this._panX % tileW) + tileW) % tileW;
-    const tilesNeeded = Math.ceil(W / tileW) + 1;
+      for (const { key, poly, cLon, cLat } of this._allGeo) {
+        if (!projectOrtho(cLon, cLat, lon0, lat0, R, cx, cy)) continue; // back hemisphere
 
-    // Draw regions for each visible tile copy
-    for (let n = -1; n <= tilesNeeded; n++) {
-      const tilePanX = normPanX + n * tileW;
-      if (tilePanX > W || tilePanX + tileW < 0) continue;
-
-      for (const { key, basePts } of this._allGeo) {
-        const ge    = byKey[key];
+        const ge    = this._byKey[key];
         const isSel = ge && this._selected === ge.region.id;
         const isHov = ge && this._hovered  === ge.region.id;
-        const pts   = this._transformedAt(basePts, tilePanX);
         const fill  = ge ? this._regionFill(ge.region, factionCol, isHov) : COL_LAND_DEF;
+
+        const pts = poly
+          .map(([lo, la]) => projectOrtho(lo, la, lon0, lat0, R, cx, cy))
+          .filter(Boolean);
+        if (pts.length < 3) continue;
 
         if (isSel) {
           ctx.shadowColor = factionCol[ge.region.controlling_faction_id] ?? '#7070b0';
@@ -517,51 +513,56 @@ export class MapView {
         ctx.shadowBlur = 0;
 
         ctx.strokeStyle = isSel ? COL_BORDER_SEL : isHov ? COL_BORDER_HOV : COL_BORDER;
-        ctx.lineWidth   = isSel ? 2 / this._zoom : 0.5 / this._zoom;
+        ctx.lineWidth   = isSel ? 1.5 : 0.5;
         ctx.stroke();
       }
 
-      // Overlays (labels, badges) for this tile
-      for (const { region, baseCx, baseCy } of this._entries) {
-        const cx = baseCx * this._zoom + tilePanX;
-        const cy = baseCy * this._zoom + this._panY;
-        if (cx < -60 || cx > W + 60) continue;  // outside viewport
-        this._drawOverlay(ctx, region, cx, cy,
+      // Overlays (labels, badges)
+      for (const { region, cLon, cLat } of this._entries) {
+        const pt = projectOrtho(cLon, cLat, lon0, lat0, R, cx, cy);
+        if (!pt) continue;
+        this._drawOverlay(ctx, region, pt.x, pt.y,
           this._hovered  === region.id,
           this._selected === region.id,
           armies[region.id] ?? [],
           heroes[region.id] ?? []);
       }
     }
+
+    ctx.restore();
+
+    // Globe rim
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.strokeStyle = '#243456';
+    ctx.lineWidth   = 1;
+    ctx.stroke();
+
+    if (!this._world) {
+      ctx.fillStyle    = COL_MUTED;
+      ctx.font         = '14px system-ui';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('No world data — complete setup or wait for turn 1.', cx, cy);
+    }
   }
 
-  _drawEmpty(W, H) {
-    const ctx      = this.ctx;
-    const tileW    = W * this._zoom;
-    const normPanX = ((this._panX % tileW) + tileW) % tileW;
-    const tilesNeeded = Math.ceil(W / tileW) + 1;
-
-    for (let n = -1; n <= tilesNeeded; n++) {
-      const tilePanX = normPanX + n * tileW;
-      if (tilePanX > W || tilePanX + tileW < 0) continue;
-      for (const { basePts } of this._allGeo) {
-        const pts = this._transformedAt(basePts, tilePanX);
-        ctx.beginPath();
-        pts.forEach(({ x, y }, i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
-        ctx.closePath();
-        ctx.fillStyle   = COL_LAND_DEF;
-        ctx.fill();
-        ctx.strokeStyle = COL_BORDER;
-        ctx.lineWidth   = 0.5 / this._zoom;
-        ctx.stroke();
-      }
+  _drawEmpty(ctx, lon0, lat0, R, cx, cy) {
+    for (const { poly, cLon, cLat } of this._allGeo) {
+      if (!projectOrtho(cLon, cLat, lon0, lat0, R, cx, cy)) continue;
+      const pts = poly
+        .map(([lo, la]) => projectOrtho(lo, la, lon0, lat0, R, cx, cy))
+        .filter(Boolean);
+      if (pts.length < 3) continue;
+      ctx.beginPath();
+      pts.forEach(({ x, y }, i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+      ctx.closePath();
+      ctx.fillStyle   = COL_LAND_DEF;
+      ctx.fill();
+      ctx.strokeStyle = COL_BORDER;
+      ctx.lineWidth   = 0.5;
+      ctx.stroke();
     }
-
-    ctx.fillStyle    = COL_MUTED;
-    ctx.font         = '14px system-ui';
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('No world data — complete setup or wait for turn 1.', W / 2, H / 2);
   }
 
   _drawOverlay(ctx, region, cx, cy, isHov, isSel, armies, heroes) {
@@ -639,26 +640,39 @@ export class MapView {
 
   // ── Hit test ──────────────────────────────────────────────────────────────
   //
-  // Convert screen (sx, sy) to base space and test against basePts directly,
-  // trying all tile offsets that could be visible at the current pan.
+  // Inverse-project screen (sx, sy) to (lon, lat), then test all geo polygons.
 
   _hitTest(sx, sy) {
-    const { W } = this._logSize();
-    const tileW    = W * this._zoom;
-    const normPanX = ((this._panX % tileW) + tileW) % tileW;
+    const { W, H } = this._logSize();
+    const cx = W / 2, cy = H / 2;
+    const R  = this._globeR(W, H);
 
-    // Base y (same for all tiles)
-    const by = (sy - this._panY) / this._zoom;
+    // Normalised coordinates relative to globe centre
+    const p = (sx - cx) / R;
+    const q = -(sy - cy) / R;
+    if (p * p + q * q > 1) return null; // outside globe disc
 
-    const tilesNeeded = Math.ceil(W / tileW) + 1;
-    for (let n = -1; n <= tilesNeeded; n++) {
-      const tilePanX = normPanX + n * tileW;
-      if (tilePanX > W || tilePanX + tileW < 0) continue;
+    // Inverse orthographic → lon/lat
+    const toDeg = 180 / Math.PI;
+    const lat0  = this._panY * (Math.PI / 180);
+    const ρ     = Math.sqrt(p * p + q * q);
 
-      const bx = (sx - tilePanX) / this._zoom;
-      for (const { key, basePts } of this._allGeo) {
-        if (pointInPoly(bx, by, basePts)) return this._byKey[key] ?? null;
-      }
+    let lon, lat;
+    if (ρ < 1e-9) {
+      lat = this._panY;
+      lon = this._panX;
+    } else {
+      const c = Math.asin(Math.min(ρ, 1));
+      lat = Math.asin(Math.cos(c) * Math.sin(lat0) + q * Math.sin(c) * Math.cos(lat0) / ρ) * toDeg;
+      lon = this._panX + Math.atan2(
+        p * Math.sin(c),
+        ρ * Math.cos(c) * Math.cos(lat0) - q * Math.sin(c) * Math.sin(lat0),
+      ) * toDeg;
+    }
+    lon = ((lon + 180) % 360 + 360) % 360 - 180;
+
+    for (const { key, poly } of this._allGeo) {
+      if (pointInPolyLonLat(lon, lat, poly)) return this._byKey[key] ?? null;
     }
     return null;
   }
@@ -691,8 +705,10 @@ export class MapView {
       const dx = x - this._drag.startX;
       const dy = y - this._drag.startY;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._drag.moved = true;
-      this._panX = this._drag.panX0 + dx;     // unclamped — wraps in _draw()
-      this._panY = this._drag.panY0 + dy;
+      const { W, H } = this._logSize();
+      const dpp = 180 / (Math.PI * this._globeR(W, H)); // degrees per pixel
+      this._panX = this._drag.panX0 - dx * dpp;
+      this._panY = this._drag.panY0 - dy * dpp;
       this._clampPanY();
       this._draw();
       return;
@@ -724,8 +740,7 @@ export class MapView {
 
   _onWheel(e) {
     e.preventDefault();
-    const { x, y } = this._canvasPos(e);
-    this._applyZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, x, y);
+    this._applyZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15);
   }
 
   // ── Keyboard input (§5.4) ─────────────────────────────────────────────────
@@ -738,16 +753,8 @@ export class MapView {
     if (e.key === '-')                   this._applyZoom(1 / 1.15);
   }
 
-  _applyZoom(factor, pivotX, pivotY) {
-    const { W, H } = this._logSize();
-    const cx = pivotX ?? W / 2;
-    const cy = pivotY ?? H / 2;
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._zoom * factor));
-    const ratio   = newZoom / this._zoom;
-    this._panX = cx - (cx - this._panX) * ratio;
-    this._panY = cy - (cy - this._panY) * ratio;
-    this._zoom = newZoom;
-    this._clampPanY();
+  _applyZoom(factor) {
+    this._zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._zoom * factor));
     this._draw();
   }
 
@@ -779,19 +786,15 @@ export class MapView {
       const dx  = pos.x - this._drag.startX;
       const dy  = pos.y - this._drag.startY;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._drag.moved = true;
-      this._panX = this._drag.panX0 + dx;
-      this._panY = this._drag.panY0 + dy;
+      const { W, H } = this._logSize();
+      const dpp = 180 / (Math.PI * this._globeR(W, H));
+      this._panX = this._drag.panX0 - dx * dpp;
+      this._panY = this._drag.panY0 - dy * dpp;
       this._clampPanY();
       this._draw();
     } else if (e.touches.length === 2 && this._pinch) {
-      const dist   = this._touchDist(e.touches[0], e.touches[1]);
-      const factor = dist / this._pinch.dist0;
-      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._pinch.zoom0 * factor));
-      const ratio   = newZoom / this._pinch.zoom0;
-      this._panX = this._pinch.midX - (this._pinch.midX - this._pinch.panX0) * ratio;
-      this._panY = this._pinch.midY - (this._pinch.midY - this._pinch.panY0) * ratio;
-      this._zoom = newZoom;
-      this._clampPanY();
+      const dist = this._touchDist(e.touches[0], e.touches[1]);
+      this._zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._pinch.zoom0 * dist / this._pinch.dist0));
       this._draw();
     }
   }

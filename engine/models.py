@@ -94,6 +94,8 @@ class Region(BaseModel):
     prosperity: int = Field(50, ge=0, le=100)
     unrest: int = Field(0, ge=0, le=100)
     controlling_faction_id: Optional[str] = None
+    lon: Optional[float] = None
+    lat: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
