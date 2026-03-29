@@ -12,7 +12,7 @@ For map interaction, see `map.md`.
 
 ### 1.1 Purpose
 
-Provides the Orders tab UI: a type selector, JSON params textarea, queued-orders list, and PR submission. Also exposes `addOrder()` so the `RegionOrdersPanel` can queue orders programmatically.
+Manages the order queue and PR submission. The queue display (list, count badge, Clear and Submit buttons) is rendered in the left side panel of the Region Selection UI (§2.4 of `ui.md`). The type selector and params textarea are kept in a hidden DOM element for internal use. Exposes `addOrder()` so `RegionOrdersPanel` can queue orders programmatically.
 
 ### 1.2 Constructor
 
@@ -212,15 +212,15 @@ Bars are CSS-rendered using percentage width. Threshold lines overlay the bar at
 
 ### 6.1 Purpose
 
-Interactive widget for issuing orders that target the selected region: deploy heroes, configure missions, and trigger region-level actions. Rendered inside `#region-info` (below `RegionInfoPanel`) or in an adjacent widget depending on layout.
+Interactive widget for issuing orders that target the selected region: deploy heroes, configure missions, and trigger region-level actions. Rendered inside `#wo-content`, which is the scrollable upper section of the left side panel (`#region-orders`) in the Region Selection UI. The lower section of the same panel contains the order queue and Submit button (managed by `OrdersPanel`).
 
 ### 6.2 Constructor
 
 ```js
-new RegionOrdersPanel(containerEl, { world, region, addOrderFn })
+new RegionOrdersPanel(containerEl, addOrderFn)
 ```
 
-`addOrderFn` is `ordersPanel.addOrder.bind(ordersPanel)`.
+`addOrderFn` is `(type, params) => ordersPanel.addOrder(type, params)`.
 
 ### 6.3 Hero roster
 

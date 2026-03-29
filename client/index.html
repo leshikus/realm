@@ -53,7 +53,6 @@
 
     <nav>
       <button class="tab-btn active" data-tab="map">Map</button>
-      <button class="tab-btn" data-tab="orders">Orders</button>
       <button class="tab-btn" data-tab="events">Events</button>
       <button class="tab-btn" data-tab="stats">Statistics</button>
     </nav>
@@ -68,31 +67,29 @@
       </div>
       <canvas id="map-canvas"></canvas>
       <div id="map-selection" class="map-selection">
-        <div id="region-info" class="map-widget"></div>
+        <!-- Left panel: context-aware orders for the selected region -->
+        <div id="region-orders" class="map-side-panel map-side-panel--left">
+          <div id="wo-content"></div>
+          <div class="wo-submit-footer">
+            <div class="wi-section-title">Order Queue <span id="order-count">(0)</span></div>
+            <ul id="orders-list"></ul>
+            <div class="wo-submit-row">
+              <button id="btn-clear-orders">Clear</button>
+              <button id="btn-submit-orders" class="primary">Submit Turn (PR)</button>
+            </div>
+            <p id="orders-status"></p>
+          </div>
+        </div>
+        <!-- Right panel: region information -->
+        <div id="region-info" class="map-side-panel map-side-panel--right"></div>
       </div>
     </div>
 
-    <!-- Orders tab -->
-    <div id="tab-orders" class="tab hidden">
-      <div class="orders-layout">
-        <div class="orders-form">
-          <h3>Compose Order</h3>
-          <label>Type
-            <select id="order-type"></select>
-          </label>
-          <label>Params (JSON)
-            <textarea id="order-params" rows="4"></textarea>
-          </label>
-          <button id="btn-add-order">+ Add Order</button>
-        </div>
-        <div class="orders-queue">
-          <h3>Orders this turn <span id="order-count">(0)</span></h3>
-          <ul id="orders-list"></ul>
-          <button id="btn-clear-orders">Clear</button>
-          <button id="btn-submit-orders" class="primary">Submit Turn (open PR)</button>
-          <p id="orders-status"></p>
-        </div>
-      </div>
+    <!-- Hidden form elements used internally by OrdersPanel -->
+    <div class="hidden">
+      <select id="order-type"></select>
+      <textarea id="order-params"></textarea>
+      <button id="btn-add-order"></button>
     </div>
 
     <!-- Events tab -->

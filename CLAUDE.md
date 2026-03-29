@@ -6,6 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Do not agree to code something that is a bad decision — argue instead until you reach an acceptable solution.
 Do not run `git commit`, I check all commits. Use `git status` to check if I have added all files.
+Before a change update respective specs in docs/
 
 ## Two-Repo Structure
 

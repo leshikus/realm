@@ -98,34 +98,39 @@ Tabs:
 
 - **Notifications** — event feed, faction messages, divine complaints
 - **Dominion** — aggregate stats and Control Layer overview
-- **Orders** — current turn's order queue (§6)
 - **Chronicle** — Event Viewer / history log (§7)
 - **Statistics** — Chart.js graphs of metrics over time (§8)
 
+// Orders are now issued directly from the map via the Region Selection UI (§2.4), not from a
+// dedicated Orders tab. The order queue and Submit button live in the left side panel that opens
+// on region selection.
+
 ## 2.4 Region Selection UI
 
-Clicking a region on the map opens a two-widget overlay anchored to the bottom of the canvas. The two widgets sit side-by-side. Neither replaces the map — the map remains visible and pannable behind them. Clicking elsewhere on the map (not another region) dismisses both widgets.
+Clicking a region on the map opens two vertical side panels that slide in over the map canvas. Neither replaces the map — the map remains visible and pannable behind them. Clicking elsewhere on the map (not another region) dismisses both panels.
 
 ```
-┌──────────────────────────────┬──────────────────────────────────────┐
-│  REGION INFO                 │  REGION ORDERS                       │
-│  (read-only; §3)             │  (write; agents + missions; §3.1)    │
-└──────────────────────────────┴──────────────────────────────────────┘
+┌────────────────┬──────────────────────────────────┬────────────────┐
+│ REGION ORDERS  │           MAP CANVAS             │  REGION INFO   │
+│ (left panel)   │                                  │  (right panel) │
+│ agents +       │                                  │  read-only     │
+│ actions +      │                                  │  stats         │
+│ queue/submit   │                                  │                │
+└────────────────┴──────────────────────────────────┴────────────────┘
 ```
 
 **How selection works:**
 
 1. Player clicks a region polygon on the map canvas.
 2. The selected region is highlighted (glowing border; colour follows map mode).
-3. The **Region Info widget** (left) slides up from the bottom-left of the canvas, populated from the region's current world-state JSON.
-4. The **Region Orders widget** (right) slides up from the bottom-right, pre-filtered to agents currently in or assigned to the selected region.
-5. Clicking a different region swaps both widgets to the new selection without closing them.
-6. Each widget has its own collapse toggle (▼); collapsing one does not affect the other.
-7. Map mode overlays continue to update behind the open widgets — the player can switch modes while a region is selected to see that region's data in context.
+3. The **Region Orders panel** slides in from the left (300 px wide): shows agents in the region, region-level action buttons, and the full order queue with a Submit Turn button.
+4. The **Region Info panel** slides in from the right (300 px wide): populated from the region's current world-state JSON.
+5. Clicking a different region swaps both panels to the new selection without closing them.
+6. Map mode overlays continue to update behind the open panels — the player can switch modes while a region is selected to see that region's data in context.
 
-// Both widgets are read-only with respect to the simulation. The Region Info widget reads
-// world-state JSON. The Region Orders widget writes only to the local orders queue (client-side),
-// which is submitted as a PR at end of turn. No live engine calls are made from either widget.
+// The Region Info panel is read-only. The Region Orders panel writes only to the local orders
+// queue (client-side); nothing is sent to the engine until the player clicks Submit Turn, which
+// opens a PR via the GitHub API. No live engine calls are made from either panel.
 
 ---
 
@@ -574,8 +579,9 @@ Overview of the player's full dominion across all Control Layers.
 
 ## 15.3 Side Panel Toggle (Right)
 
-- Tab icons: Notifications / Dominion / Orders / Chronicle / Statistics
+- Tab icons: Notifications / Dominion / Chronicle / Statistics
 - Active tab expands as a slide-over panel
+- Orders are accessed via the map (region selection), not a dedicated tab
 
 ## 15.4 Context Panel (Bottom, Appears on Selection)
 

@@ -13,6 +13,7 @@ import { StatsPanel }   from './statspanel.js';
 import { OrdersPanel }  from './orderspanel.js';
 import { SetupPanel }   from './setuppanel.js';
 import { RegionInfoPanel }   from './regionpanel.js';
+import { RegionOrdersPanel } from './regionorders.js';
 
 // ── Turn → date ────────────────────────────────────────────────────────────
 const GAME_START_YEAR = new Date().getFullYear();
@@ -193,8 +194,9 @@ function initApp() {
   });
 
   // ── Map selection overlay ─────────────────────────────────────────────
-  const mapSelectionEl = document.getElementById('map-selection');
-  const regionInfoEl   = document.getElementById('region-info');
+  const mapSelectionEl  = document.getElementById('map-selection');
+  const regionInfoEl    = document.getElementById('region-info');
+  const regionOrdersEl  = document.getElementById('wo-content');
 
   let mapView;
 
@@ -204,6 +206,22 @@ function initApp() {
   }
 
   const regionInfoPanel = new RegionInfoPanel(regionInfoEl, { onDismiss: dismissMapSelection });
+
+  const ordersPanel = new OrdersPanel({
+    typeEl:    document.getElementById('order-type'),
+    paramsEl:  document.getElementById('order-params'),
+    listEl:    document.getElementById('orders-list'),
+    countEl:   document.getElementById('order-count'),
+    statusEl:  document.getElementById('orders-status'),
+    addBtn:    document.getElementById('btn-add-order'),
+    clearBtn:  document.getElementById('btn-clear-orders'),
+    submitBtn: document.getElementById('btn-submit-orders'),
+  });
+
+  const regionOrdersPanel = new RegionOrdersPanel(
+    regionOrdersEl,
+    (type, params) => ordersPanel.addOrder(type, params),
+  );
 
   // Map view toolbar
   document.querySelectorAll('.map-view-btn').forEach(btn => {
@@ -220,8 +238,10 @@ function initApp() {
     (region) => {
       if (region && world) {
         regionInfoPanel.show(region, world);
+        regionOrdersPanel.show(region, world);
         mapSelectionEl.classList.add('open');
       } else {
+        regionOrdersPanel.hide();
         mapSelectionEl.classList.remove('open');
       }
     },
@@ -254,17 +274,6 @@ function initApp() {
     gh,
     cfg.userid,
   );
-
-  const ordersPanel = new OrdersPanel({
-    typeEl:    document.getElementById('order-type'),
-    paramsEl:  document.getElementById('order-params'),
-    listEl:    document.getElementById('orders-list'),
-    countEl:   document.getElementById('order-count'),
-    statusEl:  document.getElementById('orders-status'),
-    addBtn:    document.getElementById('btn-add-order'),
-    clearBtn:  document.getElementById('btn-clear-orders'),
-    submitBtn: document.getElementById('btn-submit-orders'),
-  });
 
   // Load world and wire everything up
   async function loadWorld() {
