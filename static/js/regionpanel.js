@@ -38,9 +38,12 @@ export class RegionInfoPanel {
     const factionMap = {};
     for (const f of (world?.factions ?? [])) factionMap[f.id] = f;
 
-    const faction     = factionMap[region.controlling_faction_id];
-    const factionName = faction?.name ?? region.controlling_faction_id ?? '—';
-    const factionCol  = FACTION_COLORS[faction?.type] ?? '#7c5cbf';
+    // Dominant faction = highest influence share
+    const inf = region.faction_influence ?? {};
+    const sorted = Object.entries(inf).sort((a, b) => b[1] - a[1]);
+    const [domId, domShare] = sorted[0] ?? [null, 0];
+    const domFaction  = factionMap[domId] ?? null;
+    const factionCol  = FACTION_COLORS[domFaction?.type] ?? '#7c5cbf';
 
     const stability = region.stability ?? region.prosperity ?? 0;
     const entropy   = region.entropy   ?? 0;
@@ -80,6 +83,20 @@ export class RegionInfoPanel {
 
     const adjacent = (region.adjacent_region_ids ?? []).join(', ') || '—';
 
+    // Influence breakdown HTML
+    const influenceHtml = sorted.length
+      ? sorted.map(([fid, share]) => {
+          const f   = factionMap[fid];
+          const col = FACTION_COLORS[f?.type] ?? '#7c5cbf';
+          const pct = Math.round(share * 100);
+          return `<div class="wi-row">
+            <span class="wi-label" style="color:${col}">${f?.name ?? fid}</span>
+            <span class="wi-val" style="color:${col}">${pct}%</span>
+          </div>
+          <div class="wi-bar-wrap"><div class="wi-bar" style="width:${pct}%;background:${col}"></div></div>`;
+        }).join('')
+      : '<span class="wi-muted">No faction influence recorded</span>';
+
     this.el.innerHTML = `
       <div class="wi-header">
         <span class="wi-title" style="color:${factionCol}">${region.name ?? region.id}</span>
@@ -87,10 +104,8 @@ export class RegionInfoPanel {
         <button class="wi-close" id="wi-close-btn" title="Dismiss">✕</button>
       </div>
 
-      <div class="wi-row">
-        <span class="wi-label">Faction</span>
-        <span class="wi-val" style="color:${factionCol}">${factionName}</span>
-      </div>
+      <div class="wi-section-title">Faction Influence</div>
+      ${influenceHtml}
 
       <div class="wi-section-title">Stability &amp; Entropy</div>
       <div class="wi-row">

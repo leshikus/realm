@@ -108,52 +108,117 @@ class StreamingBuffer {
 
 // ── Fallback procedural audio ────────────────────────────────────────────────
 
+// Drone configs: [{ f: Hz, g: gain, t: OscillatorType }]
+const _DRONE_CFG = {
+  BUREAU_NORMAL:      [{ f: 55,   g: 0.18, t: 'sine'     }, { f: 82.5, g: 0.10, t: 'sine' }],
+  PARANOID_STABILITY: [{ f: 48,   g: 0.20, t: 'sine'     }, { f: 36,   g: 0.10, t: 'sine' }, { f: 48.7, g: 0.08, t: 'sine' }],
+  THE_MEMO_ARRIVES:   [{ f: 55,   g: 0.14, t: 'sine'     }, { f: 110,  g: 0.08, t: 'sine' }, { f: 220, g: 0.04, t: 'triangle' }],
+  PRODUCTIVE_DECLINE: [{ f: 55,   g: 0.14, t: 'triangle' }, { f: 65.4, g: 0.10, t: 'triangle' }, { f: 82.4, g: 0.08, t: 'triangle' }],
+  ACTIVE_UNREST:      [{ f: 55,   g: 0.18, t: 'square'   }, { f: 110,  g: 0.08, t: 'sawtooth' }],
+  WORLD_EVENT:        [{ f: 110,  g: 0.18, t: 'sine'     }, { f: 165,  g: 0.12, t: 'sine' }, { f: 220, g: 0.08, t: 'sine' }],
+  COLLAPSE_IMMINENT:  [{ f: 36,   g: 0.18, t: 'sine'     }, { f: 38,   g: 0.14, t: 'sine' }, { f: 41,  g: 0.10, t: 'sine' }],
+  BUREAU_DISSOLVES:   [{ f: 28,   g: 0.14, t: 'sine'     }],
+};
+
 function createFallbackNode(ctx, mood, entropy = 0) {
+  const mk = mood.key;
   const master = ctx.createGain();
   master.gain.value = 0;
   master.connect(ctx.destination);
 
-  // Low institutional drone
-  const drone = ctx.createOscillator();
-  drone.type = 'sine';
-  drone.frequency.value = mood.key === 'PARANOID_STABILITY' ? 48 :
-                          mood.key === 'COLLAPSE_IMMINENT'  ? 36 :
-                          mood.key === 'BUREAU_DISSOLVES'   ? 28 : 55;
+  // ── Drone stack ────────────────────────────────────────────────────────
+  const droneCfg = _DRONE_CFG[mk] ?? _DRONE_CFG.BUREAU_NORMAL;
+  const droneGains = droneCfg.map(({ f, g, t }) => {
+    const osc = ctx.createOscillator();
+    osc.type = t;
+    osc.frequency.value = f;
+    const gain = ctx.createGain();
+    gain.gain.value = g;
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start();
+    return gain;
+  });
 
-  const droneGain = ctx.createGain();
-  droneGain.gain.value = 0.12;
-  drone.connect(droneGain);
-  droneGain.connect(master);
-  drone.start();
-
-  // Slow AM modulation — "institutional hollow"
+  // ── LFO — AM modulation on primary drone ──────────────────────────────
+  const lfoFreqs = { PARANOID_STABILITY: 0.3, COLLAPSE_IMMINENT: 0.5, ACTIVE_UNREST: 0.4 };
   const lfo = ctx.createOscillator();
-  lfo.frequency.value = 0.08;
+  lfo.frequency.value = lfoFreqs[mk] ?? 0.08;
   const lfoGain = ctx.createGain();
-  lfoGain.gain.value = 0.06;
+  lfoGain.gain.value = mk === 'ACTIVE_UNREST' ? 0.10 : 0.05;
   lfo.connect(lfoGain);
-  lfoGain.connect(droneGain.gain);
+  lfoGain.connect(droneGains[0].gain);
   lfo.start();
 
-  // Clock ticks for paranoid/collapse moods
-  if (['PARANOID_STABILITY', 'THE_MEMO_ARRIVES', 'COLLAPSE_IMMINENT'].includes(mood.key)) {
-    const tickInterval = setInterval(() => {
-      if (ctx.state === 'closed') { clearInterval(tickInterval); return; }
-      const tick = ctx.createOscillator();
-      tick.type = 'square';
-      tick.frequency.value = 1200 + Math.random() * 400;
-      const tickGain = ctx.createGain();
-      tickGain.gain.setValueAtTime(0.06, ctx.currentTime);
-      tickGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.05);
-      tick.connect(tickGain);
-      tickGain.connect(master);
-      tick.start();
-      tick.stop(ctx.currentTime + 0.06);
-    }, mood.key === 'COLLAPSE_IMMINENT' ? 800 : 1500);
-    master._tickInterval = tickInterval;
+  // ── Filtered noise for industrial / collapse moods ────────────────────
+  if (['ACTIVE_UNREST', 'COLLAPSE_IMMINENT', 'PARANOID_STABILITY'].includes(mk)) {
+    const bufSize = ctx.sampleRate * 2;
+    const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buf;
+    noise.loop = true;
+    const filt = ctx.createBiquadFilter();
+    filt.type = mk === 'ACTIVE_UNREST' ? 'highpass' : 'bandpass';
+    filt.frequency.value = mk === 'ACTIVE_UNREST' ? 1800 : 600;
+    filt.Q.value = 2;
+    const ng = ctx.createGain();
+    ng.gain.value = mk === 'ACTIVE_UNREST' ? 0.07 : 0.03;
+    noise.connect(filt);
+    filt.connect(ng);
+    ng.connect(master);
+    noise.start();
+    master._noiseSource = noise;
   }
 
-  // Entropy distortion
+  // ── Rhythmic ticks ────────────────────────────────────────────────────
+  const tickCfg = {
+    PARANOID_STABILITY: { ms: 1500, f: () => 1200 + Math.random() * 400, dur: 0.05, g: 0.07 },
+    THE_MEMO_ARRIVES:   { ms: 1000, f: () => 1400 + Math.random() * 200, dur: 0.05, g: 0.06 },
+    COLLAPSE_IMMINENT:  { ms:  700, f: () =>  900 + Math.random() * 600, dur: 0.06, g: 0.08 },
+    ACTIVE_UNREST:      { ms:  500, f: () =>   60 + Math.random() * 40,  dur: 0.12, g: 0.14 },
+  };
+  if (tickCfg[mk]) {
+    const { ms, f, dur, g } = tickCfg[mk];
+    const iv = setInterval(() => {
+      if (ctx.state === 'closed') { clearInterval(iv); return; }
+      const tick = ctx.createOscillator();
+      tick.type = 'square';
+      tick.frequency.value = f();
+      const tg = ctx.createGain();
+      tg.gain.setValueAtTime(g, ctx.currentTime);
+      tg.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+      tick.connect(tg);
+      tg.connect(master);
+      tick.start();
+      tick.stop(ctx.currentTime + dur + 0.01);
+    }, ms * (0.9 + Math.random() * 0.2));  // ±10% jitter
+    master._tickInterval = iv;
+  }
+
+  // ── Sparse piano-like notes for BUREAU_DISSOLVES ──────────────────────
+  if (mk === 'BUREAU_DISSOLVES') {
+    const noteFreqs = [220, 277.18, 329.63, 440, 220, 329.63];
+    let nIdx = 0;
+    const niv = setInterval(() => {
+      if (ctx.state === 'closed') { clearInterval(niv); return; }
+      if (Math.random() > 0.55) return;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = noteFreqs[nIdx++ % noteFreqs.length];
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.12, ctx.currentTime);
+      ng.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 2.8);
+      osc.connect(ng);
+      ng.connect(master);
+      osc.start();
+      osc.stop(ctx.currentTime + 2.9);
+    }, 3000 + Math.random() * 3000);
+    master._tickInterval = niv;
+  }
+
+  // ── Entropy distortion ─────────────────────────────────────────────────
   if (entropy > 70) {
     const shaper = ctx.createWaveShaper();
     const curve = new Float32Array(256);
@@ -163,8 +228,7 @@ function createFallbackNode(ctx, mood, entropy = 0) {
       curve[i] = ((Math.PI + 300 * amount) * x) / (Math.PI + 300 * amount * Math.abs(x));
     }
     shaper.curve = curve;
-    droneGain.disconnect();
-    droneGain.connect(shaper);
+    droneGains.forEach(g => { g.disconnect(); g.connect(shaper); });
     shaper.connect(master);
   }
 
@@ -205,6 +269,7 @@ class AudioPlayer {
         if (prev.node)    {
           try { prev.node.disconnect(); } catch {}
           if (prev.node._tickInterval) clearInterval(prev.node._tickInterval);
+          if (prev.node._noiseSource)  { try { prev.node._noiseSource.stop(); } catch {} }
         }
       }, fadeOut * 1000 + 100);
     }

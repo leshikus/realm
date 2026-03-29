@@ -10,12 +10,12 @@ The goal is to provide a reusable, performant, and extensible component suitable
 
 ## 2. Core Features
 
-* Render a 2D world map (equirectangular projection by default)
+* Render a 2D globe (orthographic projection)
 * Smooth zoom (scale in/out)
-* Drag/pan across the map
+* Drag/pan to rotate the globe
 * Region selection (hover + click)
 * Event-driven API
-* High-performance rendering (Canvas or WebGL preferred)
+* High-performance rendering (Canvas 2D)
 
 ---
 
@@ -32,14 +32,33 @@ The goal is to provide a reusable, performant, and extensible component suitable
 * X axis: left → right
 * Y axis: top → bottom
 
-### 3.3 Projection
+### 3.3 Projections
 
-Default: **Equirectangular projection**
+Three coordinate systems are in use:
+
+**Equal-area space** — used for Voronoi cell computation. Lambert cylindrical equal-area projection prevents polar seeds from dominating the tessellation:
 
 ```
-x = (lon + 180) / 360 * mapWidth
-y = (90 - lat) / 180 * mapHeight
+x = lon,  y = sin(lat · π/180)
+bounds = [-180, -1, 180, 1]
 ```
+
+Inverse: `lon = x,  lat = asin(y) · 180/π`.
+
+After computing Voronoi in this space, cell vertices are inverse-projected back to lon/lat. Edges are then subdivided along great circle arcs (SLERP, ≤ 4° per segment) so they render correctly on the orthographic globe.
+
+**Geographic space (lon/lat)** — the working format for cell polygons and hit testing after inverse projection from equal-area space.
+
+**Display projection (orthographic)** — used for all canvas rendering. The globe is centred at `(lon0, lat0)` and projected to screen pixels:
+
+```js
+cosC = sin(lat0)·sin(lat) + cos(lat0)·cos(lat)·cos(lon - lon0)
+// point is visible only when cosC > 0
+x = cx + R · cos(lat) · sin(lon - lon0)
+y = cy − R · (cos(lat0)·sin(lat) − sin(lat0)·cos(lat)·cos(lon - lon0))
+```
+
+`R` = globe radius in logical pixels (function of canvas size × zoom). `cx, cy` = canvas centre.
 
 ---
 
@@ -47,20 +66,19 @@ y = (90 - lat) / 180 * mapHeight
 
 ### 4.1 Layers
 
-1. Base map (image or tile set)
-2. Region overlays
-3. Interaction layer (hover/selection highlights)
-4. UI layer (markers, labels)
+1. Ocean sphere (filled circle)
+2. Voronoi region fills (clipped to globe disc)
+3. Region borders (Voronoi cell edges)
+4. Overlays: labels, population, army/hero badges
 
-### 4.2 Rendering Options
+### 4.2 Renderer
 
-* Canvas 2D (simple)
-* WebGL (recommended for large datasets / smooth zoom)
+Canvas 2D. All draw calls use logical (CSS) pixels; the canvas physical size is CSS size × `devicePixelRatio`.
 
 ### 4.3 Resolution Handling
 
-* Support `devicePixelRatio` scaling — canvas physical size = CSS size × dpr; ctx is pre-scaled so all draw calls use logical (CSS) pixels
-* Use offscreen buffers for performance
+* Canvas physical size = CSS size × `devicePixelRatio`
+* `ctx.setTransform(dpr, 0, 0, dpr, 0, 0)` applied once after resize; all draw calls use CSS pixels
 
 ---
 
@@ -68,41 +86,25 @@ y = (90 - lat) / 180 * mapHeight
 
 ### 5.1 Scale Model
 
-* Continuous zoom
-* Scale factor: `minScale <= scale <= maxScale`
+* Continuous zoom factor `zoom`
+* `minScale = 0.5` (whole globe visible plus margins)
+* `maxScale = 8.0`
 
-```
-minScale = 0.5   // whole world visible plus margins
-maxScale = 8.0
-```
+Globe radius in pixels: `R = min(W, H) / 2 × zoom − 4`
 
 ### 5.2 Zoom Centering
 
-Zoom must be centered on:
+Zoom is centred on the mouse position or viewport centre.
 
-* Mouse position (preferred)
-* Or viewport center
-
-### 5.3 Zoom Formula
-
-When zooming at point `(mx, my)`:
-
-```
-newOffsetX = mx - (mx - offsetX) * (newScale / oldScale)
-newOffsetY = my - (my - offsetY) * (newScale / oldScale)
-```
-
-### 5.4 Input Methods
+### 5.3 Input Methods
 
 * Mouse wheel (`deltaY`)
-* Trackpad pinch (two-finger)
-* Touch pinch (two-finger)
+* Trackpad / touch pinch (two-finger)
 * Keyboard `+` / `-` (zooms on viewport centre)
 
-### 5.5 Constraints
+### 5.4 Constraints
 
-* Clamp scale to min/max
-* Optional zoom smoothing (lerp)
+* Scale clamped to `[minScale, maxScale]`
 
 ---
 
@@ -110,164 +112,157 @@ newOffsetY = my - (my - offsetY) * (newScale / oldScale)
 
 ### 6.1 Interaction
 
-* Click + drag to move map
+Dragging rotates the globe by adjusting `(lon0, lat0)` — the centre of the orthographic projection.
+
+* Mouse: click + drag
 * Touch: single-finger drag
 
-### 6.2 State
+### 6.2 Degrees per Pixel
 
 ```
-isDragging: boolean
-startX, startY
-initialOffsetX, initialOffsetY
+dpp = 180 / (π · R)
+lon0 -= dx · dpp
+lat0 -= dy · dpp
 ```
 
-### 6.3 Update Logic
+### 6.3 Bounds
 
-```
-offsetX = initialOffsetX + (currentX - startX)
-offsetY = initialOffsetY + (currentY - startY)
-```
-
-### 6.4 Bounds Handling
-
-**Horizontal (longitude):** Infinite wrap — the map tiles seamlessly at the antimeridian (±180°). Dragging past the right edge reveals the left side of the world and vice versa. The internal pan offset accumulates freely; the draw call normalises it into `[0, tileWidth)` before rendering. No horizontal clamp is applied.
-
-**Vertical (latitude):** Hard clamp — the viewport cannot scroll above the North Pole or below the South Pole. At zoom ≥ 1 the map fills the canvas height exactly; at smaller zoom the map is centred and vertical pan is disabled.
-
-`panX` is never directly clamped. It is normalised as:
-
-```
-normPanX = ((panX % tileW) + tileW) % tileW   // tileW = canvasW × zoom
-```
-
-Rendering draws copies at `normPanX + n × tileW` for `n ∈ {−1, 0, 1, …}` until the canvas is covered.
-
-Deprecated options (not implemented):
-* Hard clamp
-* Soft clamp / elastic edges
+* `lon0` wraps freely; normalised to `[-180, 180]` after drag ends to prevent float drift
+* `lat0` hard-clamped to `[-85, 85]`
 
 ---
 
 ## 7. Region Model
 
-### 7.1 Region Definition
+### 7.1 Region Seeds
 
-Each region is defined as:
+Each geographic region is defined by a **center seed** `(lon, lat)` in degrees, stored in `map.json`. Seeds are derived from real-world bounding boxes as `((W+E)/2, (N+S)/2)` and are also hardcoded in `GEO_REGIONS` in `mapview.js` for use by the overlay renderer. The canonical source is `map.json`.
 
-```
-{
-  id: string,
-  name: string,
-  polygons: [ [ [lon, lat], ... ] ],
-  metadata: object
+```js
+GEO_REGIONS = {
+  england_wales: { cx: -1.5, cy: 53 },
+  france_north:  { cx:  2,   cy: 49.5 },
+  // …
 }
 ```
 
-### 7.2 Geometry
+### 7.2 Voronoi Cell Generation
 
-* Polygon or multi-polygon
-* Preprocessed into screen-space paths
+Region polygons are **not hand-authored**. They are computed once at startup from the adjacency graph declared in `map.json`.
 
-### 7.3 Spatial Indexing
+Every region (land, sea, and polar) has a seed `(lon, lat)` and an `adjacent_region_ids` list in `map.json`. The map client loads this file at startup and builds a lookup from normalized region key to seed position and neighbour list. Sea regions are included as seeds even though they are not rendered — their seeds act as bisector anchors that bound the cells of adjacent coastal land regions.
 
-* Use R-tree or quadtree for hit detection
+For each non-polar region, cell vertices are computed by the following process. The seed is projected to equal-area space as `(lon, sin(lat°))`; Lambert cylindrical projection keeps high-latitude seeds from dominating. The cell starts as the full EA bounding box `[−180, −1, 180, 1]`. For each declared adjacent region, the polygon is clipped by the perpendicular bisector in EA space between the two seeds: the bisector passes through the midpoint of the two projected seeds and is normal to the vector between them. After all neighbour bisectors are applied, the cell holds exactly the EA points closer to this seed than to any declared neighbour. When two adjacent seeds straddle the antimeridian, the shorter-path longitude difference is used so the bisector falls near the antimeridian rather than the prime meridian.
+
+The clipped EA polygon is then further clipped to the latitude band 60°S–75°N. This prevents any non-polar cell from reaching the bounding-box corners, which map to the geographic poles and would otherwise produce distorted wedge shapes. Cell vertices are then inverse-projected back to lon/lat via `lat = asin(y) · 180/π`, and each polygon edge is subdivided along the great circle arc connecting its endpoints (SLERP, at most 4° per segment) so edges follow the sphere surface rather than cutting through it when rendered.
+
+The arctic (north of 75°N) and antarctica (south of 60°S) regions are not built from the adjacency graph. They are explicit spherical-cap polygons: a sequence of points sampled every 2° of longitude along the bounding latitude circle, closed with the pole vertex. Dense sampling keeps each SLERP arc short enough (≈0.5°) to follow the latitude circle instead of bowing toward the equator.
+
+**Adjacency requirements.** Every region must have at least three declared neighbours. With fewer than three neighbours, the half-plane intersection cannot close into a bounded polygon and the cell degenerates.
+
+### 7.2a Hemisphere Clipping
+
+Before rendering, each cell polygon is clipped to the visible hemisphere using Sutherland-Hodgman:
+
+* Vertices with `cosC > 0` are kept
+* For each edge crossing the horizon (`cosC = 0`), the intersection point on the unit sphere is computed via linear interpolation in 3D Cartesian space and added to the output
+
+This replaces the previous approach of simply filtering out invisible vertices (which broke polygon shapes for large cells).
+
+### 7.3 Hit Detection
+
+Point-in-polygon (ray casting) against Voronoi cell polygons in lon/lat space:
+
+1. Inverse-project screen click `(sx, sy)` to `(lon, lat)` via inverse orthographic
+2. Test `(lon, lat)` against each cell polygon
+3. Return the matching region
+
+Because Voronoi cells partition the plane completely, every visible point on the globe maps to exactly one region.
+
+### 7.4 Spatial Lookup
+
+`_allGeo` — ordered list of `{ key, poly, cLon, cLat }` for all GEO_REGIONS entries.
+`_byKey` — map from geo key → world region entry (for O(1) game-data lookup after hit).
+`_entries` — world regions that matched a geo seed (used for overlays and `selectById`).
 
 ---
 
 ## 8. Region Selection
 
-### 8.1 Hit Detection
+### 8.1 Interaction States
 
-Steps:
+* `hoveredRegion` — updated on `mousemove`
+* `selectedRegion` — set on `click` or `selectById(id)`
 
-1. Convert mouse position → world coordinates
-2. Convert to geo coordinates
-3. Test against region polygons (point-in-polygon)
+### 8.2 Visual Feedback
 
-### 8.2 Interaction States
+* Hover: brighter fill + highlighted border (`COL_BORDER_HOV`)
+* Selected: glowing shadow (faction colour) + thicker border (`COL_BORDER_SEL`)
 
-* `hoveredRegion`
-* `selectedRegion`
+### 8.3 View Modes
 
-### 8.3 Events
+The fill colour of each region changes with the active view mode:
 
-* `onRegionHover(regionId)`
-* `onRegionLeave(regionId)`
-* `onRegionClick(regionId)`
+| Mode | Fill |
+|---|---|
+| `political` | Faction colour (dimmed unless hovered) |
+| `population` | Blue heat map (log scale, 0 → 1400M) |
+| `unrest` | Green → amber → red (0 → 80) |
+| `prosperity` | Red → amber → green (0 → 100) |
 
-### 8.4 Visual Feedback
+### 8.4 Callback
 
-* Hover: highlight outline or fill
-* Selected: persistent highlight
-
----
-
-## 9. Event System
-
-### 9.1 Supported Events
-
-* `zoom`
-* `pan`
-* `region:hover`
-* `region:click`
-* `region:select`
-
-### 9.2 API Example
-
-```
-map.on('region:click', (region) => {
-  console.log(region.id)
-})
+```js
+new MapView(canvas, (region) => { /* region or null on deselect */ })
 ```
 
 ---
 
-## 10. Performance Considerations
+## 9. Overlays
 
-* Debounce wheel events
-* Use requestAnimationFrame for rendering
-* Cache transformed geometries
-* Avoid full redraws when possible
+Drawn after region fills, at each region's projected center:
+
+* **Region name** — 10 px label
+* **Population** — 8 px sub-label (`XXM` or `X.XB`)
+* **Unrest dot** — coloured circle above label if `unrest > 0`
+* **Army badge** — `⚔N` if armies present
+* **Hero badge** — `★N` if heroes present
 
 ---
 
-## 11. API Design
+## 10. Performance
 
-### 11.1 Initialization
+* Voronoi computed once at module load; cells stored in memory
+* Region polygons projected fresh each frame (orthographic depends on `lon0/lat0`)
+* `requestAnimationFrame` not used explicitly — redraws triggered by input events only
+* `ResizeObserver` triggers `_layout()` (recomputes projected coords + redraws) on container resize
 
-```
-const map = new WorldMap({
-  container: HTMLElement,
-  minScale: 0.5,
-  maxScale: 8,
-  enableWrapping: true
-})
+---
+
+## 11. API
+
+### 11.1 Constructor
+
+```js
+new MapView(canvasEl, onSelectCallback)
 ```
 
 ### 11.2 Methods
 
-```
-map.setScale(scale)
-map.panTo(x, y)
-map.selectRegion(id)
-map.loadRegions(data)
-```
-
-### 11.3 Getters
-
-```
-map.getScale()
-map.getOffset()
-map.getSelectedRegion()
-```
+| Method | Description |
+|---|---|
+| `render(world)` | Load world data and draw |
+| `setView(mode)` | Switch map view mode |
+| `selectById(regionId)` | Select region by game ID, rotate globe to it |
+| `deselect()` | Clear selection |
 
 ---
 
 ## 12. Mobile Support
 
-* Pinch-to-zoom
-* Touch drag
-* Tap selection
+* Pinch-to-zoom (two-touch)
+* Single-finger drag to rotate
+* Tap to select region
 
 ---
 
@@ -275,19 +270,12 @@ map.getSelectedRegion()
 
 * Day/night terminator shading
 * Animated radar sweep (X-COM style)
-* Markers (UFOs, bases)
+* Markers (armies, heroes)
 * Time acceleration controls
+* Weighted Voronoi (geographic cost map biases cell shapes toward natural borders)
 
 ---
 
-## 14. Extensibility
+## 14. Summary
 
-* Plugin system for overlays
-* Custom projections
-* Custom renderers
-
----
-
-## 15. Summary
-
-This control provides a flexible foundation for an interactive world map with smooth zooming, intuitive dragging, and efficient region selection, suitab
+The map control renders a rotatable orthographic globe. Geographic regions are partitioned using a Voronoi diagram computed from seed centers, giving gapless coverage with no hand-authored polygon data. All rendering, hit testing, and selection work against these computed cells.

@@ -19,7 +19,12 @@ const REGION_ACTIONS = [
   {
     label:  'Fund Propaganda',
     type:   'set_propaganda',
-    params: r => ({ faction_id: r.controlling_faction_id ?? '', value: 5 }),
+    // target the dominant faction (highest influence share)
+    params: r => {
+      const inf = r.faction_influence ?? {};
+      const dom = Object.entries(inf).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
+      return { faction_id: dom, value: 5 };
+    },
   },
   {
     label:  'Levy Tax',

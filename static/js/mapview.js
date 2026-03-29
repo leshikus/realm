@@ -1,14 +1,16 @@
 /**
- * mapview.js — Geographic polygon world map (~150 regions).
+ * mapview.js — Geographic world map rendered on a rotating orthographic globe.
  *
  * Spec: docs/map.md
  *
  * Key behaviours:
  *  - Orthographic (globe) projection; drag rotates lon0/lat0
+ *  - Region polygons are Voronoi cells built by half-plane intersection over the adjacency graph
  *  - Zoom range: 0.5 … 8 (scales globe radius)
  *  - Input: mouse wheel, trackpad/touch pinch, keyboard +/-, touch drag, tap-to-select
  *  - devicePixelRatio-aware canvas sizing (§4.3)
  */
+// (No external imports — Voronoi cells are built from the adjacency graph in map.json)
 
 // ── Colours ──────────────────────────────────────────────────────────────────
 
@@ -34,201 +36,143 @@ function unrestColor(u) {
   return COL_UNREST_LO;
 }
 
-// ── Geographic polygon data ──────────────────────────────────────────────────
-// _b(W, S, E, N) creates a rectangular polygon from a bounding box.
+// ── Region seeds, keys, and cell polygons ─────────────────────────────────────
+// All region seeds (lon, lat) and the adjacency graph come from map.json.
+// No hardcoded coordinate table exists here.
 
-function _b(W, S, E, N) {
-  return { poly: [[W,N],[E,N],[E,S],[W,S]], cx: (W+E)/2, cy: (N+S)/2 };
-}
+// Load all region seeds and adjacency graph from map.json.
+// Keys: reg_* → strip "reg_" prefix; sea_* → kept as-is.
+// Sea regions are included as bisector seeds but excluded from rendering.
+const _MAP_DATA = await fetch('./world/map.json').then(r => r.json());
+const _toKey    = id => id.replace(/^reg_/, '');
+const _SEEDS    = new Map(_MAP_DATA.map(r => [_toKey(r.id), r]));
 
-const GEO_REGIONS = {
-  // ── North America ──
-  alaska:               _b(-170, 54, -130, 72),
-  canada_west:          _b(-140, 49, -100, 70),
-  canada_east:          _b(-100, 45,  -52, 70),
-  greenland:            _b( -60, 60,  -16, 84),
-  usa_pacific:          _b(-125, 32, -114, 49),
-  usa_mountain:         _b(-114, 32, -103, 49),
-  usa_great_plains:     _b(-103, 36,  -93, 49),
-  usa_midwest:          _b( -93, 36,  -80, 48),
-  usa_northeast:        _b( -80, 40,  -67, 47),
-  usa_south_central:    _b(-100, 25,  -87, 36),
-  usa_southeast:        _b( -87, 25,  -75, 36),
-  mexico:               _b(-118, 14,  -87, 32),
-  central_america:      _b( -92,  8,  -77, 18),
-  caribbean_west:       _b( -90, 18,  -72, 26),
-  caribbean_east:       _b( -72, 12,  -60, 24),
+// Keys of renderable (non-sea) regions — derived from map.json, not a hardcoded table.
+const _GEO_KEYS = [..._SEEDS.keys()].filter(k => !k.startsWith('sea_'));
 
-  // ── South America ──
-  colombia_venezuela:   _b( -82,  0,  -60, 12),
-  guiana:               _b( -65, -2,  -44,  8),
-  ecuador_peru:         _b( -82,-18,  -68,  4),
-  bolivia:              _b( -70,-23,  -55,-10),
-  brazil_north:         _b( -70, -5,  -44,  5),
-  brazil_northeast:     _b( -50,-16,  -35, -3),
-  brazil_central:       _b( -58,-20,  -44, -8),
-  brazil_south:         _b( -58,-34,  -43,-20),
-  argentina:            _b( -72,-56,  -52,-22),
-  chile:                _b( -76,-56,  -66,-18),
+// ── Voronoi cells (adjacency-graph half-plane intersection) ──────────────────
+//
+// For each region seed p, clip the EA bounding box by the perpendicular bisector
+// between p and each adjacent seed. The resulting polygon is the set of EA points
+// closer to p than to any declared neighbour. Together the non-sea cells tile the
+// visible globe with no gaps.
+const _GEO_CELLS = (() => {
+  const EA_FWD = (lon, lat) => [lon, Math.sin(lat * Math.PI / 180)];
+  const EA_INV = (x, y)    => [x,   Math.asin(Math.max(-1, Math.min(1, y))) * 180 / Math.PI];
 
-  // ── Europe ──
-  iceland:              _b( -26, 63,  -12, 67),
-  ireland:              _b( -11, 51,   -5, 56),
-  england_wales:        _b(  -5, 50,    2, 56),
-  scotland:             _b(  -8, 55,    2, 61),
-  norway:               _b(   4, 57,   34, 72),
-  sweden:               _b(  12, 55,   26, 70),
-  finland:              _b(  24, 60,   32, 70),
-  denmark:              _b(   8, 54,   16, 58),
-  netherlands_belgium:  _b(   2, 50,    8, 54),
-  portugal:             _b( -10, 36,   -6, 42),
-  spain_north:          _b(  -8, 40,    4, 45),
-  spain_south:          _b(  -8, 36,    0, 41),
-  france_north:         _b(  -4, 47,    8, 52),
-  france_south:         _b(  -2, 42,    8, 47),
-  germany_north:        _b(   8, 52,   16, 56),
-  germany_south:        _b(   8, 47,   16, 52),
-  switzerland_austria:  _b(   6, 46,   18, 49),
-  italy_north:          _b(   7, 44,   16, 47),
-  italy_south:          _b(  14, 37,   20, 43),
-  poland:               _b(  14, 49,   24, 55),
-  czechia_slovakia:     _b(  14, 47,   24, 50),
-  hungary_croatia:      _b(  14, 45,   22, 48),
-  romania:              _b(  22, 43,   30, 48),
-  bulgaria_greece:      _b(  20, 36,   28, 44),
-  serbia_albania:       _b(  18, 41,   24, 46),
-  ukraine_west:         _b(  22, 44,   32, 52),
-  ukraine_east:         _b(  32, 44,   40, 52),
-  belarus:              _b(  24, 52,   34, 56),
-  baltics:              _b(  22, 54,   28, 60),
+  // Sutherland-Hodgman clip of an EA polygon to yMin ≤ y ≤ yMax.
+  function _clipEA(poly, yMin, yMax) {
+    let pts = poly;
+    // clip north: keep y ≤ yMax
+    {
+      const out = [];
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        if (a[1] <= yMax) out.push(a);
+        if ((a[1] <= yMax) !== (b[1] <= yMax)) {
+          const t = (yMax - a[1]) / (b[1] - a[1]);
+          out.push([a[0] + t * (b[0] - a[0]), yMax]);
+        }
+      }
+      pts = out;
+    }
+    // clip south: keep y ≥ yMin
+    {
+      const out = [];
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        if (a[1] >= yMin) out.push(a);
+        if ((a[1] >= yMin) !== (b[1] >= yMin)) {
+          const t = (yMin - a[1]) / (b[1] - a[1]);
+          out.push([a[0] + t * (b[0] - a[0]), yMin]);
+        }
+      }
+      pts = out;
+    }
+    return pts;
+  }
 
-  // ── Russia & Central Asia ──
-  russia_northwest:     _b(  28, 58,   52, 70),
-  russia_volga:         _b(  44, 48,   58, 60),
-  russia_south:         _b(  38, 42,   54, 52),
-  caucasus:             _b(  38, 38,   52, 44),
-  kazakhstan:           _b(  50, 40,   84, 56),
-  uzbekistan_tajikistan:_b(  56, 36,   76, 44),
-  turkmenistan:         _b(  52, 34,   62, 40),
-  siberia_west:         _b(  60, 55,   90, 70),
-  siberia_central:      _b(  88, 55,  120, 72),
-  siberia_east:         _b( 118, 55,  165, 72),
-  russia_far_east:      _b( 130, 42,  180, 58),
-  russia_yakutia:       _b( 108, 62,  150, 74),
+  // Build a spherical cap polygon in lon/lat by densely sampling the boundary
+  // latitude circle (every 2° lon) then closing through the pole.
+  function _capPoly(capLat, poleLat) {
+    const pts = [];
+    for (let lon = -180; lon <= 180; lon += 2) pts.push([lon, capLat]);
+    pts.push([180, poleLat]);
+    pts.push([-180, poleLat]);
+    pts.push([-180, capLat]);
+    return _subdividePoly(pts);
+  }
 
-  // ── Middle East & North Africa ──
-  turkey_west:          _b(  26, 36,   36, 42),
-  turkey_east:          _b(  36, 36,   46, 42),
-  georgia_armenia:      _b(  38, 38,   50, 44),
-  azerbaijan:           _b(  46, 38,   52, 44),
-  syria_lebanon:        _b(  34, 32,   42, 38),
-  israel_jordan:        _b(  34, 28,   38, 34),
-  iraq:                 _b(  38, 28,   50, 38),
-  iran_north:           _b(  44, 34,   62, 42),
-  iran_south:           _b(  50, 24,   62, 34),
-  iran_central:         _b(  52, 28,   64, 36),
-  saudi_arabia:         _b(  36, 14,   52, 32),
-  yemen:                _b(  42, 12,   56, 20),
-  oman_uae:             _b(  52, 14,   62, 26),
-  egypt:                _b(  24, 20,   38, 32),
-  libya:                _b(  10, 20,   26, 34),
-  algeria_tunisia:      _b(  -2, 20,   14, 38),
-  morocco:              _b( -10, 28,    0, 38),
-  mauritania_sahara:    _b( -18, 16,   -2, 32),
-  sahel_north:          _b(  -2, 10,   22, 22),
+  // Clip poly to the half-plane closer to (ax, ay) than to (bx, by) in EA space.
+  // Adjusts bx to take the shorter path across the antimeridian when needed.
+  // If the adjusted path still spans >180°, the bisector falls outside the bounding
+  // box and the clip is skipped (poly returned unchanged).
+  function _clipHalfPlane(poly, ax, ay, bx, by) {
+    if (bx - ax > 180) bx -= 360;
+    else if (bx - ax < -180) bx += 360;
+    if (Math.abs(bx - ax) > 180) return poly;
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    const nx = bx - ax, ny = by - ay;
+    const inside = (px, py) => (px - mx) * nx + (py - my) * ny <= 0;
+    const out = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const aIn = inside(a[0], a[1]);
+      const bIn = inside(b[0], b[1]);
+      if (aIn) out.push(a);
+      if (aIn !== bIn) {
+        const denom = (b[0] - a[0]) * nx + (b[1] - a[1]) * ny;
+        if (Math.abs(denom) > 1e-10) {
+          const t = ((mx - a[0]) * nx + (my - a[1]) * ny) / denom;
+          if (t > 0 && t < 1)
+            out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]);
+        }
+      }
+    }
+    return out;
+  }
 
-  // ── Sub-Saharan Africa ──
-  chad:                 _b(  14,  8,   24, 20),
-  sudan:                _b(  22, 10,   38, 22),
-  south_sudan:          _b(  26,  4,   38, 12),
-  ethiopia:             _b(  36,  4,   46, 16),
-  somalia:              _b(  42,  0,   52, 12),
-  kenya:                _b(  36, -4,   42,  4),
-  tanzania:             _b(  30,-12,   40, -4),
-  uganda:               _b(  30, -2,   36,  4),
-  drc_north:            _b(  18, -2,   32,  6),
-  drc_south:            _b(  18,-14,   30, -2),
-  angola:               _b(  10,-20,   24, -4),
-  zambia:               _b(  22,-18,   34, -8),
-  zimbabwe_mozambique:  _b(  30,-26,   40,-14),
-  namibia_botswana:     _b(  14,-28,   28,-18),
-  south_africa:         _b(  16,-36,   34,-26),
-  senegal_guinea:       _b( -18,  8,   -8, 16),
-  liberia_ivory_coast:  _b( -10,  4,   -2, 10),
-  ghana_togo:           _b(  -2,  4,    4, 10),
-  nigeria:              _b(   2,  4,   16, 12),
-  cameroon_gabon:       _b(   8, -4,   16,  8),
-  congo_eq_guinea:      _b(  12, -8,   20,  4),
-  madagascar:           _b(  42,-26,   52,-12),
+  // Non-polar cells are capped at these EA y values so no cell touches y=±1.
+  const MAX_Y_N = Math.sin(75 * Math.PI / 180);   //  sin(75°) ≈ 0.966
+  const MAX_Y_S = Math.sin(-60 * Math.PI / 180);  // sin(−60°) ≈ −0.866
 
-  // ── South Asia ──
-  afghanistan:          _b(  60, 28,   76, 38),
-  pakistan:             _b(  60, 22,   76, 30),
-  india_north:          _b(  74, 26,   88, 34),
-  india_central:        _b(  72, 18,   82, 26),
-  india_west:           _b(  68, 14,   76, 22),
-  india_south:          _b(  72,  8,   80, 18),
-  india_east:           _b(  78, 18,   88, 26),
-  nepal_bhutan:         _b(  80, 26,   92, 30),
-  bangladesh:           _b(  88, 20,   94, 26),
-  sri_lanka:            _b(  80,  6,   82, 10),
-  myanmar:              _b(  92, 14,  102, 28),
+  const cells = {};
+  for (const [key, region] of _SEEDS) {
+    if (key === 'arctic')     { cells[key] = _capPoly(75, 90);   continue; }
+    if (key === 'antarctica') { cells[key] = _capPoly(-60, -90); continue; }
 
-  // ── East Asia ──
-  mongolia:             _b(  88, 40,  120, 50),
-  china_xinjiang:       _b(  72, 34,   92, 48),
-  china_tibet:          _b(  80, 26,  102, 36),
-  china_northeast:      _b( 118, 40,  136, 54),
-  china_north:          _b( 104, 36,  124, 44),
-  china_east:           _b( 116, 28,  124, 36),
-  china_south:          _b( 104, 20,  122, 30),
-  china_sichuan:        _b(  96, 26,  110, 34),
-  taiwan:               _b( 120, 22,  124, 26),
-  korea_north:          _b( 124, 38,  132, 44),
-  korea_south:          _b( 126, 34,  130, 40),
-  japan_west:           _b( 128, 30,  136, 36),
-  japan_central:        _b( 134, 34,  140, 40),
-  japan_north:          _b( 138, 40,  148, 46),
-  inner_mongolia:       _b( 106, 40,  122, 48),
+    let cell = [[-180, -1], [180, -1], [180, 1], [-180, 1]];
+    const [ax, ay] = EA_FWD(region.lon, region.lat);
 
-  // ── Southeast Asia ──
-  thailand_laos:        _b(  96,  8,  106, 22),
-  cambodia_vietnam:     _b( 102,  8,  110, 20),
-  malaysia:             _b( 100,  0,  120,  8),
-  philippines:          _b( 116,  6,  128, 22),
-  sumatra:              _b(  94, -6,  108,  6),
-  java_bali:            _b( 104,-10,  116, -4),
-  borneo:               _b( 108, -4,  122,  8),
-  indonesia_east:       _b( 120,-10,  142,  2),
-  new_guinea:           _b( 130,-10,  142,  0),
-  indochina_coast:      _b( 100,  2,  112, 12),
+    for (const adjId of (region.adjacent_region_ids ?? [])) {
+      const adj = _SEEDS.get(_toKey(adjId));
+      if (!adj) continue;
+      const [bx, by] = EA_FWD(adj.lon, adj.lat);
+      cell = _clipHalfPlane(cell, ax, ay, bx, by);
+      if (cell.length < 3) break;
+    }
 
-  // ── Oceania ──
-  australia_west:       _b( 112,-36,  130,-22),
-  australia_north:      _b( 128,-22,  142,-14),
-  australia_south:      _b( 128,-38,  154,-22),
-  new_zealand:          _b( 164,-48,  178,-34),
-  pacific_islands_west: _b( 142,-20,  170, 20),
-  pacific_islands_east: _b( 160,-28,  180, 24),
+    if (cell.length < 3) continue;
+    const clipped = _clipEA(cell, MAX_Y_S, MAX_Y_N);
+    if (clipped.length < 3) continue;
+    cells[key] = _subdividePoly(clipped.map(([x, y]) => EA_INV(x, y)));
+  }
+  return cells;
+})();
 
-  // ── Polar ──
-  arctic:               _b(-180, 68,  180, 90),
-  antarctica:           _b(-180,-90,  180,-62),
-};
-
-// Match a game region to its GEO_REGIONS entry.
+// Match a game region to its seed entry in _SEEDS.
 function findGeo(id, name) {
   const norm = s => (s ?? '').toLowerCase()
     .replace(/^reg_/, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
   const nid   = norm(id);
   const nname = norm(name);
 
-  if (GEO_REGIONS[nid])   return { key: nid,   geo: GEO_REGIONS[nid] };
-  if (GEO_REGIONS[nname]) return { key: nname, geo: GEO_REGIONS[nname] };
+  if (_SEEDS.has(nid))   return _SEEDS.get(nid);
+  if (_SEEDS.has(nname)) return _SEEDS.get(nname);
 
-  for (const key of Object.keys(GEO_REGIONS)) {
+  for (const key of _GEO_KEYS) {
     if (key.length >= 5 && nid.length >= 5 && (nid === key || nid.includes(key) || key.includes(nid)))
-      return { key, geo: GEO_REGIONS[key] };
+      return _SEEDS.get(key);
   }
 
   const ALIAS = {
@@ -245,8 +189,8 @@ function findGeo(id, name) {
   };
   for (const [alias, geoKey] of Object.entries(ALIAS)) {
     if (nname.includes(alias) || nid.includes(alias)) {
-      const geo = GEO_REGIONS[geoKey];
-      if (geo) return { key: geoKey, geo };
+      const seed = _SEEDS.get(geoKey);
+      if (seed) return seed;
     }
   }
   return null;
@@ -257,13 +201,18 @@ function findGeo(id, name) {
 // Orthographic projection centred at (lon0, lat0).
 // Returns {x, y} in screen pixels, or null if the point is on the back hemisphere.
 
-function projectOrtho(lon, lat, lon0, lat0, R, cx, cy) {
+/**
+ * Projects (lon, lat) to canvas (x, y) via orthographic projection centred at (lon0, lat0).
+ * Returns null for back-hemisphere points unless `force` is true.
+ * Pass force=true for already-clipped polygons where the canvas clip handles edge cases.
+ */
+function projectOrtho(lon, lat, lon0, lat0, R, cx, cy, force = false) {
   const toRad = Math.PI / 180;
   const φ  = lat  * toRad;
   const φ0 = lat0 * toRad;
   const Δλ = (lon - lon0) * toRad;
   const cosC = Math.sin(φ0) * Math.sin(φ) + Math.cos(φ0) * Math.cos(φ) * Math.cos(Δλ);
-  if (cosC <= 0) return null;
+  if (!force && cosC < 0) return null;
   return {
     x: cx + R * Math.cos(φ) * Math.sin(Δλ),
     y: cy - R * (Math.cos(φ0) * Math.sin(φ) - Math.sin(φ0) * Math.cos(φ) * Math.cos(Δλ)),
@@ -282,6 +231,76 @@ function pointInPolyLonLat(lon, lat, poly) {
       inside = !inside;
   }
   return inside;
+}
+
+// ── Spherical geometry helpers ────────────────────────────────────────────────
+
+function _toXYZ(lon, lat) {
+  const φ = lat * Math.PI / 180, λ = lon * Math.PI / 180;
+  return [Math.cos(φ)*Math.cos(λ), Math.cos(φ)*Math.sin(λ), Math.sin(φ)];
+}
+
+function _fromXYZ(x, y, z) {
+  return [Math.atan2(y, x) * 180/Math.PI, Math.asin(z) * 180/Math.PI];
+}
+
+/** Subdivide a closed d3-delaunay polygon along great circle arcs (≤ maxDeg° per segment). */
+function _subdividePoly(poly, maxDeg = 4) {
+  const out = [];
+  for (let i = 0, n = poly.length - 1; i < n; i++) {
+    const p1 = poly[i], p2 = poly[i + 1];
+    const v1 = _toXYZ(p1[0], p1[1]), v2 = _toXYZ(p2[0], p2[1]);
+    const dot = Math.max(-1, Math.min(1, v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2]));
+    const θ   = Math.acos(dot);
+    const segs = Math.max(1, Math.ceil(θ * 180/Math.PI / maxDeg));
+    for (let j = 0; j < segs; j++) {
+      const t = j / segs;
+      if (θ < 1e-6) { out.push(p1); continue; }
+      const s = Math.sin(θ);
+      const w1 = Math.sin((1 - t) * θ) / s, w2 = Math.sin(t * θ) / s;
+      out.push(_fromXYZ(
+        w1*v1[0] + w2*v2[0],
+        w1*v1[1] + w2*v2[1],
+        w1*v1[2] + w2*v2[2],
+      ));
+    }
+  }
+  return out;
+}
+
+/**
+ * Sutherland-Hodgman clip of a polygon to the visible hemisphere facing (lon0, lat0).
+ * Returns an open polygon suitable for closePath() rendering.
+ */
+function _clipHemisphere(poly, lon0, lat0) {
+  const N   = _toXYZ(lon0, lat0);
+  const dN  = p => { const q = _toXYZ(p[0], p[1]); return N[0]*q[0] + N[1]*q[1] + N[2]*q[2]; };
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const P1 = poly[i], P2 = poly[(i + 1) % poly.length];
+    const d1 = dN(P1),  d2 = dN(P2);
+    if (d1 > 0) out.push(P1);
+    if ((d1 > 0) !== (d2 > 0)) {
+      const a = _toXYZ(P1[0], P1[1]), b = _toXYZ(P2[0], P2[1]);
+      const t  = d1 / (d1 - d2);
+      const ix = a[0]+t*(b[0]-a[0]), iy = a[1]+t*(b[1]-a[1]), iz = a[2]+t*(b[2]-a[2]);
+      const len = Math.sqrt(ix*ix + iy*iy + iz*iz);
+      out.push(_fromXYZ(ix/len, iy/len, iz/len));
+    }
+  }
+  return out;
+}
+
+// ── Faction influence helpers ─────────────────────────────────────────────────
+
+/** Returns the faction_id with the highest influence share, or null. */
+function dominantFaction(region) {
+  const inf = region.faction_influence ?? {};
+  let best = null, bestVal = -1;
+  for (const [fid, val] of Object.entries(inf)) {
+    if (val > bestVal) { best = fid; bestVal = val; }
+  }
+  return best;
 }
 
 // ── View-mode colour helpers ──────────────────────────────────────────────────
@@ -351,7 +370,7 @@ export class MapView {
     canvas.addEventListener('touchmove',  e => this._onTouchMove(e),  { passive: false });
     canvas.addEventListener('touchend',   e => this._onTouchEnd(e),   { passive: false });
 
-    this._ro = new ResizeObserver(() => { if (this._world || this._allGeo.length) this._layout(); });
+    this._ro = new ResizeObserver(() => this._layout());
     this._ro.observe(canvas.parentElement ?? canvas);
   }
 
@@ -405,25 +424,26 @@ export class MapView {
     // All draw calls use logical (CSS) pixel coordinates
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Store raw lon/lat — projected per-frame in _draw()
-    this._allGeo = Object.entries(GEO_REGIONS).map(([key, geo]) => ({
-      key,
-      poly: geo.poly,   // [[lon, lat], ...]
-      cLon: geo.cx,
-      cLat: geo.cy,
-    }));
+    // Use pre-computed Voronoi cells — projected per-frame in _draw()
+    this._allGeo = _GEO_KEYS
+      .filter(key => _GEO_CELLS[key])
+      .map(key => {
+        const seed = _SEEDS.get(key);
+        return {
+          key,
+          poly: _GEO_CELLS[key],   // [[lon, lat], ...] Voronoi cell
+          cLon: seed.lon,
+          cLat: seed.lat,
+        };
+      });
 
     this._entries = (this._world?.regions ?? []).map(r => {
-      if (r.lon != null && r.lat != null) {
-        // Use lon/lat from regions.json directly; derive key from id
-        const key = r.id.replace(/^reg_/, '');
-        return { region: r, key, cLon: r.lon, cLat: r.lat };
-      }
-      // Fallback: fuzzy-match via GEO_REGIONS
-      const match = findGeo(r.id, r.name);
-      if (!match) return null;
-      const { key, geo } = match;
-      return { region: r, key, cLon: geo.cx, cLat: geo.cy };
+      const key  = r.id.replace(/^reg_/, '');
+      const seed = _SEEDS.get(key) ?? findGeo(r.id, r.name);
+      if (!seed) return null;
+      const cLon = r.lon  != null ? r.lon  : seed.lon;
+      const cLat = r.lat  != null ? r.lat  : seed.lat;
+      return { region: r, key, cLon, cLat };
     }).filter(Boolean);
 
     // Index for O(1) lookup in _hitTest
@@ -488,20 +508,18 @@ export class MapView {
       const heroes     = this._indexBy(this._world.heroes ?? [], 'region_id');
 
       for (const { key, poly, cLon, cLat } of this._allGeo) {
-        if (!projectOrtho(cLon, cLat, lon0, lat0, R, cx, cy)) continue; // back hemisphere
+        const clipped = _clipHemisphere(poly, lon0, lat0);
+        if (clipped.length < 3) continue;
 
         const ge    = this._byKey[key];
         const isSel = ge && this._selected === ge.region.id;
         const isHov = ge && this._hovered  === ge.region.id;
         const fill  = ge ? this._regionFill(ge.region, factionCol, isHov) : COL_LAND_DEF;
 
-        const pts = poly
-          .map(([lo, la]) => projectOrtho(lo, la, lon0, lat0, R, cx, cy))
-          .filter(Boolean);
-        if (pts.length < 3) continue;
+        const pts = clipped.map(([lo, la]) => projectOrtho(lo, la, lon0, lat0, R, cx, cy, true));
 
         if (isSel) {
-          ctx.shadowColor = factionCol[ge.region.controlling_faction_id] ?? '#7070b0';
+          ctx.shadowColor = factionCol[dominantFaction(ge.region)] ?? '#7070b0';
           ctx.shadowBlur  = 16;
         }
 
@@ -548,12 +566,10 @@ export class MapView {
   }
 
   _drawEmpty(ctx, lon0, lat0, R, cx, cy) {
-    for (const { poly, cLon, cLat } of this._allGeo) {
-      if (!projectOrtho(cLon, cLat, lon0, lat0, R, cx, cy)) continue;
-      const pts = poly
-        .map(([lo, la]) => projectOrtho(lo, la, lon0, lat0, R, cx, cy))
-        .filter(Boolean);
-      if (pts.length < 3) continue;
+    for (const { poly } of this._allGeo) {
+      const clipped = _clipHemisphere(poly, lon0, lat0);
+      if (clipped.length < 3) continue;
+      const pts = clipped.map(([lo, la]) => projectOrtho(lo, la, lon0, lat0, R, cx, cy, true));
       ctx.beginPath();
       pts.forEach(({ x, y }, i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
       ctx.closePath();
@@ -622,8 +638,8 @@ export class MapView {
         const col = threeStopColor(p, 0, 50, 100, '#c0392b', '#e67e22', '#27ae60');
         return isHov ? col : this._dim(col, 0.75);
       }
-      default: {  // political
-        const base = factionCol[region.controlling_faction_id] ?? COL_LAND_DEF;
+      default: {  // political — colour by dominant faction
+        const base = factionCol[dominantFaction(region)] ?? COL_LAND_DEF;
         return dim(base);
       }
     }

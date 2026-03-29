@@ -6,7 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Do not agree to code something that is a bad decision — argue instead until you reach an acceptable solution.
 Do not run `git commit`, I check all commits. Use `git status` to check if I have added all files.
+Read and edit anything in the base folder, access anything on public internet
 Before a change update respective specs in docs/
+Add a test for each spec update
+When using browser client, use headless version
 
 ## Two-Repo Structure
 
@@ -31,7 +34,7 @@ pytest engine/tests/test_simulation.py::test_name -v
 python -m engine.main <userid> <turn>
 ```
 
-The browser client (`client/`) is vanilla HTML/CSS/JS — no build step.
+The browser client (`static/`) is vanilla HTML/CSS/JS — no build step.
 
 **Live deployment:** https://leshikus.github.io/conspiracy-game/ — use this URL with Playwright to test client-side bugs.
 
@@ -52,7 +55,7 @@ The browser client (`client/`) is vanilla HTML/CSS/JS — no build step.
 - `loader.py` — File I/O: reads/writes `world/<userid>/*.json` and shared state
 - `main.py` — CLI entry point; orchestrates load → validate → resolve → persist; exits 1 on validation failure
 
-### Browser Client (`client/js/`)
+### Browser Client (`static/js/`)
 
 - `app.js` — Root controller; wires panels, manages config, drives world load/render cycle
 - `github.js` — All GitHub API calls (fetch world JSON, load event log, submit orders as PR)
@@ -65,9 +68,14 @@ The browser client (`client/`) is vanilla HTML/CSS/JS — no build step.
 Lives in the `conspiracy` repo (player forks):
 
 ```
+# conspiracy-game repo (this repo):
+static/world/map.json      # Static region topology: id, name, adjacency, lon/lat (game master only)
+
+# conspiracy repo (player forks):
 shared/world.json          # Global state: current turn, deadline, player list
+shared/regions.json        # Dynamic region state: faction_influence, population, prosperity, unrest
 <userid>/
-  heroes.json, factions.json, regions.json, armies.json
+  heroes.json, factions.json, armies.json
   economy.json, belief.json, turn.json
   orders/turn.json          # Submitted via PR
   history/events.log

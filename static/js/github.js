@@ -48,6 +48,14 @@ export class GitHubClient {
 
   // ── World state loading ─────────────────────────────────────────────
 
+  /** Fetch static region topology from conspiracy-game/world/map.json. */
+  async loadMap() {
+    const url = new URL('../world/map.json', import.meta.url);
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    return res.json();
+  }
+
   async loadWorld(userid) {
     const load = async (path, fallback) => {
       try {
@@ -57,16 +65,22 @@ export class GitHubClient {
       return fallback;
     };
 
-    const [heroes, factions, regions, armies, economy, belief, turnObj] =
+    const [heroes, factions, regionsDynamic, armies, economy, belief, turnObj, mapStatic] =
       await Promise.all([
         load(`${userid}/heroes.json`,   []),
         load(`${userid}/factions.json`, []),
-        load(`${userid}/regions.json`,  []),
+        load(`shared/regions.json`,     []),
         load(`${userid}/armies.json`,   []),
         load(`${userid}/economy.json`,  {}),
         load(`${userid}/belief.json`,   {}),
         load(`${userid}/turn.json`,     { turn: 0 }),
+        this.loadMap(),
       ]);
+
+    // Merge static topology (map.json) with dynamic state (shared/regions.json)
+    const dynamicById = Object.fromEntries(regionsDynamic.map(r => [r.id, r]));
+    const regions = mapStatic.map(s => ({ ...s, ...dynamicById[s.id] }));
+
     return { heroes, factions, regions, armies, economy, belief, turn: turnObj.turn ?? 0 };
   }
 

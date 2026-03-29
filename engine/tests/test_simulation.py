@@ -44,7 +44,7 @@ def make_world() -> PlayerWorld:
             Region(
                 id="reg1",
                 name="Valdenmoor",
-                owner="testplayer",
+                faction_influence={"fac1": 1.0},
                 population=5000,
                 prosperity=60,
                 unrest=10,

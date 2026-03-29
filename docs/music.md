@@ -100,9 +100,26 @@ Minimal UI — music should be felt, not managed:
 
 1. Call primary configured service
 2. On failure or timeout (>8s), fall back to secondary
-3. If all services fail, loop a locally bundled minimal track (silence with periodic institutional tones)
+3. If all services fail, generate procedural audio via Web Audio API (`FallbackService`)
 
-The fallback track is not a placeholder — it is an intentional aesthetic choice. When the music system fails, the silence should feel like a budget cut.
+The fallback is not silence — it generates mood-appropriate drone stacks, filtered noise, rhythmic ticks, and sparse melodic notes using the Web Audio API. No API key is required.
+
+### Procedural Fallback Audio
+
+`createFallbackNode(ctx, mood, entropy)` returns a master `GainNode` connected to `ctx.destination`. Per-mood audio layers:
+
+| Mood | Oscillators | Texture | Rhythm |
+|---|---|---|---|
+| Bureau Normal | 55Hz sine + 82.5Hz (perfect 5th) | — | 4/4 slow pulse |
+| Paranoid Stability | 48Hz + 72Hz + detuned unison | — | Irregular clock ticks (1.5s) |
+| The Memo Arrives | 55Hz + 110Hz + 220Hz building | — | Metronomic ticks (1s) |
+| Productive Decline | Triangle drones: 55 + 65 + 82Hz (minor chord) | — | — |
+| Active Unrest | Square + sawtooth bass | High-pass noise hiss | Fast irregular beats (500ms) |
+| World Event | 110Hz + 165Hz + 220Hz (bright chord) | — | — |
+| Collapse Imminent | 36/38/41Hz dissonant cluster | Band-pass noise | Rapid ticks (700ms) |
+| The Bureau Dissolves | 28Hz sub-sine | — | Sparse piano-like notes (random ~3s) |
+
+All layers pass through the master gain. When `entropy > 70`, a `WaveShaperNode` applies progressive soft clipping distortion to the drone stack.
 
 ---
 
@@ -130,7 +147,7 @@ The ♫ button in the music player header opens the **Music Library modal**. It 
 
 **Saved Tracks tab**
 - Shows all saved tracks for the selected mood
-- ▶ Play: immediately plays the track in the active player
+- ▶ Play button per track: calls `music.playTrack(moodKey, track)` on `YTMusicPlayer` and switches playback immediately; round-robin cursor is advanced past this track
 - ✕ Remove: removes from the library and syncs to storage
 
 **Search YouTube tab**

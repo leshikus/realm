@@ -13,7 +13,7 @@ import sys
 import json
 from datetime import datetime, timezone
 
-from .loader import load_player_world, save_player_world, append_history, world_dir
+from .loader import load_player_world, save_player_world, save_regions, append_history, world_dir
 from .orders import load_orders, validate_orders
 from .simulation import resolve_turn
 
@@ -43,6 +43,7 @@ def main() -> None:
 
     # Persist
     save_player_world(result.world)
+    save_regions(result.world.regions)
 
     # Write history
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

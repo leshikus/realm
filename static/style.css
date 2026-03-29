@@ -759,6 +759,8 @@ textarea { resize: vertical; }
 .mm-track-ch    { color: var(--muted); font-size: 11px; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 
 .mm-track-row button { font-size: 11px; padding: 2px 8px; min-width: unset; flex-shrink: 0; }
+.mm-play-btn   { color: var(--accent2); border-color: transparent; background: none; }
+.mm-play-btn:hover   { background: rgba(74, 158, 255, 0.12); border-color: var(--accent2); }
 .mm-remove-btn { color: var(--danger); border-color: transparent; background: none; }
 .mm-remove-btn:hover { background: rgba(192, 57, 43, 0.12); border-color: var(--danger); }
 

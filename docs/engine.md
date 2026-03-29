@@ -61,15 +61,19 @@ Faction:
 
 ### 3.4 Region
 
+Regions are contested territory — no single player owns them. Each faction holds a fractional share of influence that sums toward 1.0 across all factions active in the region.
+
 ```
 Region:
-  id, name, owner
+  id, name
+  faction_influence:   dict[faction_id → float]   # 0.0–1.0 per faction
   adjacent_region_ids: list[str]
   population:          int
   prosperity:          int (0–100)
   unrest:              int (0–100)
-  controlling_faction_id: str | None
 ```
+
+The **dominant faction** — the one with the highest influence share — determines the region's political colour on the map and is the default target for propaganda orders. Multiple factions can hold meaningful shares simultaneously.
 
 ### 3.5 Economy
 
@@ -123,14 +127,18 @@ PlayerWorld:
 
 ### 3.9 SharedWorld
 
-Global state (lives in `shared/world.json`):
+Global state. `world.json` and `regions.json` both live under `shared/`:
 
 ```
-SharedWorld:
+SharedWorld:  (shared/world.json)
   current_turn:       int
   turn_deadline_utc:  str | None   # ISO 8601
   player_ids:         list[str]
+
+shared/regions.json:  list[Region]   # loaded into PlayerWorld.regions at runtime
 ```
+
+Regions are shared because they are contested territory with no single owner. The engine loads them from `shared/regions.json` into `PlayerWorld.regions` so simulation code can access them without structural changes. After turn resolution the updated regions are written back to `shared/regions.json`.
 
 ---
 
@@ -232,32 +240,51 @@ Six flavour events drawn randomly. Some apply side effects:
 
 Determined by `CONSPIRACY_WORLD_ROOT` environment variable (set by CI to the checked-out `conspiracy` repo workspace). Falls back to `../conspiracy` relative to the package for local development.
 
-### 6.2 Player world file layout
+### 6.2 File layout
+
+Region data is split across two files:
+
+| File | Repo | Fields | Mutability |
+|---|---|---|---|
+| `world/map.json` | `conspiracy-game` | `id`, `name`, `adjacent_region_ids`, `lon`, `lat` | Static — game master only |
+| `shared/regions.json` | `conspiracy` | `id`, `faction_influence`, `population`, `prosperity`, `unrest` | Dynamic — written each turn |
+
+The loader merges both into a full `Region` object at load time. Only dynamic fields are written back after turn resolution.
 
 ```
-{userid}/
-  heroes.json       # list of Hero objects
-  factions.json     # list of Faction objects
-  regions.json      # list of Region objects
-  armies.json       # list of Army objects
-  economy.json      # single Economy object
-  belief.json       # single BeliefIndex object
-  turn.json         # { "turn": N }
-  orders/
-    turn.json       # TurnOrders (submitted via PR)
-  history/
-    events.log      # append-only narrative log
-    stats_NNNN.json # per-turn stats snapshot
+conspiracy-game/
+  world/
+    map.json          # static region topology (id, name, adjacency, coordinates)
+
+conspiracy/
+  shared/
+    world.json        # SharedWorld: current turn, deadline, player list
+    regions.json      # dynamic region state (faction_influence, population, prosperity, unrest)
+
+  {userid}/
+    heroes.json       # list of Hero objects
+    factions.json     # list of Faction objects
+    armies.json       # list of Army objects
+    economy.json      # single Economy object
+    belief.json       # single BeliefIndex object
+    turn.json         # { "turn": N }
+    orders/
+      turn.json       # TurnOrders (submitted via PR)
+    history/
+      events.log      # append-only narrative log
+      stats_NNNN.json # per-turn stats snapshot
 ```
 
 ### 6.3 Functions
 
 | Function | Description |
 |---|---|
-| `load_player_world(userid)` | Reads all `{userid}/*.json`; supplies defaults for missing files |
-| `save_player_world(world)` | Writes all `{userid}/*.json`; creates directory if needed |
+| `load_player_world(userid)` | Reads `{userid}/*.json` + merges map + region state; supplies defaults for missing files |
+| `save_player_world(world)` | Writes `{userid}/*.json` (not regions); creates directory if needed |
 | `load_shared_world()` | Reads `shared/world.json` |
 | `save_shared_world(shared)` | Writes `shared/world.json` |
+| `load_map()` | Reads `world/map.json` from `conspiracy-game`; returns static region descriptors |
+| `save_regions(regions)` | Writes dynamic fields only to `shared/regions.json` |
 | `append_history(userid, entry)` | Appends a line to `{userid}/history/events.log` |
 
 ---

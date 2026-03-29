@@ -344,6 +344,20 @@ export class YTMusicPlayer {
     await this._playNext();
   }
 
+  /** Play a specific track immediately. Advances round-robin past this track. */
+  async playTrack(moodKey, track) {
+    if (MOODS[moodKey]) this.mood = MOODS[moodKey];
+    this._currentTrack = track;
+    this._trackStarted = Date.now();
+    this._playing = true;
+    const tracks = this.library.tracksForMood(moodKey);
+    const idx    = tracks.findIndex(t => t.videoId === track.videoId);
+    this._trackIndices[moodKey] = (idx + 1) % Math.max(tracks.length, 1);
+    this._updateUI(track.title);
+    if (this.mode === 'youtube') await this._playViaYT(track.videoId);
+    else                         await this._playViaMp3(track.videoId);
+  }
+
   async triggerResolution() {
     this._prevMood = this.mood;
     this.mood      = MOODS.THE_MEMO_ARRIVES;

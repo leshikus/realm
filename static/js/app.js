@@ -2,6 +2,8 @@
  * app.js — Root controller.
  * Wires together config, GitHub client, and all UI panels.
  */
+
+alert(1)
 import { Config }       from './config.js';
 import { GitHubClient, AuthError } from './github.js';
 import { MusicPlayer, MOODS }  from './musicplayer.js';
@@ -380,12 +382,20 @@ function initApp() {
 
     el.innerHTML = tracks.map((t, i) => `
       <div class="mm-track-row">
+        <button class="mm-play-btn" data-idx="${i}" data-mood="${mood}" title="Play now">▶</button>
         <span class="mm-track-title" title="${t.title}">${t.title}</span>
         <span class="mm-track-ch" title="${t.channel ?? ''}">${t.channel ?? ''}</span>
         <a class="mm-open-link" href="https://www.youtube.com/watch?v=${t.videoId}" target="_blank" rel="noopener" title="Open on YouTube">↗</a>
         <button class="mm-remove-btn" data-idx="${i}" data-mood="${mood}" title="Remove">✕</button>
       </div>
     `).join('');
+
+    el.querySelectorAll('.mm-play-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const track = library.tracksForMood(btn.dataset.mood)[+btn.dataset.idx];
+        if (track && music?.playTrack) music.playTrack(btn.dataset.mood, track);
+      });
+    });
 
     el.querySelectorAll('.mm-remove-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
