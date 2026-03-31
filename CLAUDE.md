@@ -9,7 +9,7 @@ Do not run `git commit`, I check all commits. Use `git status` to check if I hav
 Read and edit anything in the base folder, access anything on public internet
 Before a change update respective specs in docs/
 Add a test for each spec update
-When using browser client, use headless version
+When using browser client, use headless version, the site is available at https://cnspr.github.io
 
 ## Two-Repo Structure
 
@@ -17,6 +17,7 @@ The game is split across two repositories:
 
 - **`conspiracy`** — world state + CI workflow. Players fork this. Contains `world/` and `process-turn.yml`. The workflow checks out `conspiracy-game` at runtime to run the simulation.
 - **`conspiracy-game`** — this repo. Client, engine, docs. Only the game master pushes here. Deployed to GitHub Pages.
+cnspr.github.io game static web client
 
 ## Commands
 
