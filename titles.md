@@ -6,3 +6,6 @@ Warum kann die Vereinfachung der Wissenschaft für Schüler zu einem Hindernis a
 
 3. Какова роль благородной лжи в сохранении хрупкого равновесия между сомнением и энтузиазмом?
 Welche Rolle spielt die edle Lüge bei der Bewahrung des zerbrechlichen Gleichgewichts zwischen Zweifel und Enthusiasmus?
+
+4. Каким образом выбор термина определяет способ нашего мышления о реальности?
+Auf welche Weise bestimmt die Wahl eines Fachbegriffs unsere Art, über die Realität nachzudenken?
