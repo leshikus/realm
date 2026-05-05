@@ -30,14 +30,14 @@
 
     ### Правила генерации промптов для иллюстраций:
     Для создания визуально насыщенных и атмосферных иллюстраций к историям следует использовать следующую структуру промпта:
-    1. **Субъект и действие:** Четкое описание персонажа (например, Шура, Леша или Лектор) и его состояния. Важен контраст эмоций: персонаж КЛШ должен оставаться спокойным и расчетливым на фоне эмоционального окружения.
-    2. **Композиция и сцена:** Описание окружения (например, длинный обеденный стол, имперские офицеры, таежный лагерь). Использование драматических ракурсов.
-    3. **Освещение (Кьяроскуро):** Обязательное использование светотени. Теплый свет (свечи, костер), освещающий лица, в контрасте с холодными, глубокими тенями.
-    4. **Символизм:** Включение визуальных метафор (например, луч света над головой как символ добродетели, рождающейся из рационального дискурса; баланс между инстинктом и разумом).
-    5. **Стиль и качество:** `anime style`, `ultra detailed`, `masterpiece`, `cinematic chiaroscuro lighting`, `volumetric lighting`, `depth of field`, `4k`.
+    1. **Субъект и действие:** Четкое описание персонажа (например, Шура, Леша или Лектор) и его состояния. Важен контраст эмоций: персонаж КЛШ должен оставаться спокойным и расчетливым на фоне эмоционального окружения или суровой природы.
+    2. **Локальная эстетика (Тайга):** Обязательное использование образов лагеря «Таежный»: вековые сосны, крутой берег Енисея, щитовые деревянные домики («скворечники»), костровища.
+    3. **Освещение (Кьяроскуро):** Использование резкой светотени. Теплый свет костра, керосиновой лампы или закатного солнца, освещающий лица, в контрасте с холодными, глубокими тенями леса или сумерек.
+    4. **Символизм:** Включение визуальных метафор (например, луч света как символ рационального знания в хаосе энтропии; дым костра, принимающий форму математических графиков).
+    5. **Стиль и качество:** `anime style`, `Ghibli-inspired landscapes` (для природы), `ultra detailed`, `cinematic chiaroscuro lighting`, `volumetric lighting`, `depth of field`, `4k`.
 
     *Пример промпта:*
-    > "Shura sitting at a long dinner table with imperial officers, intense philosophical debate in progress, she remains calm and calculating while others argue emotionally, cinematic chiaroscuro lighting, warm candlelight illuminating food and faces contrasted with cold shadows, symbolic beam of light above Shura representing virtue emerging through rational discourse, subtle visual metaphor of balance between instinct and reason, anime style, ultra detailed, masterpiece, depth of field, volumetric lighting, dramatic composition, 4k"
+    > "Shura sitting at a rough wooden table near a campfire in a Siberian taiga camp, surrounding by arguing students, she remains calm and calculating while explaining a law of physics, majestic ancient pines and small wooden shield-houses in the background, steep bank of the Yenisei river at twilight, cinematic chiaroscuro lighting, warm campfire light illuminating faces contrasted with cold deep shadows of the forest, symbolic beam of light above Shura representing clarity of mind, anime style, ultra detailed, masterpiece, volumetric lighting, 4k"
 
     11. **Запрет на самокомментирование:**
  Запрещено использовать пояснительные приложения и вставные конструкции, которые напрямую раскрывают функциональную или символическую роль локальной детали (например, «селедка — этот символ наряда» или «бигос, ставший ритуалом»). Локальная деталь должна быть органично вплетена в действие или описание быта. Читатель должен понимать значение детали из контекста и поступков героев, а не из авторских определений.
